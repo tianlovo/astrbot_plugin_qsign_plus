@@ -76,7 +76,8 @@ class WealthSystem:
                 base_value = WEALTH_BASE_VALUES[name]
                 break
         contract_level = self.data_manager.get_purchase_count(user_id)
-        price_bonus = self.config.get("contract_level_price_bonus", 0.15)
+        contract_config = self.config.get("contract", {})
+        price_bonus = contract_config.get("contract_level_price_bonus", 0.15)
         return base_value * (1 + contract_level * price_bonus)
 
     async def get_total_contractor_rate(
@@ -92,7 +93,8 @@ class WealthSystem:
             总加成率
         """
         total_rate = 0.0
-        rate_bonus = self.config.get("contract_level_rate_bonus", 0.075)
+        contract_config = self.config.get("contract", {})
+        rate_bonus = contract_config.get("contract_level_rate_bonus", 0.075)
         for contractor_id in contractor_ids:
             contractor_data = await self.data_manager.get_user_data(
                 group_id, contractor_id
@@ -131,7 +133,8 @@ class WealthSystem:
         original_earned = earned
 
         if is_penalized:
-            income_rate = self.config.get("employed_income_rate", 0.7)
+            contract_config = self.config.get("contract", {})
+            income_rate = contract_config.get("employed_income_rate", 0.7)
             earned *= income_rate
 
         interest = user_data["bank"] * 0.01

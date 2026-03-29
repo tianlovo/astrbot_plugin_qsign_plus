@@ -80,7 +80,8 @@ class ContractSystem(Star):
             return
 
         group_id = str(event.message_obj.group_id)
-        if not is_group_allowed(group_id, self.config.get("enabled_groups", [])):
+        basic_config = self.config.get("basic", {})
+        if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
             return
 
         target_id = get_target_at_user(event)
@@ -97,7 +98,8 @@ class ContractSystem(Star):
 
         # 检查目标用户是否为群主/管理员
         if await self._is_user_admin(event, target_id):
-            admin_bonus = self.config.get("admin_price_bonus", 0.5)
+            admin_config = self.config.get("admin", {})
+            admin_bonus = admin_config.get("admin_price_bonus", 0.5)
             yield event.plain_result(
                 f"无法购买群主或管理员！管理员身价加成 {admin_bonus * 100}%，不可被购买。"
             )
@@ -121,7 +123,8 @@ class ContractSystem(Star):
                 yield event.plain_result("该用户已经是您的雇员了。")
                 return
 
-            takeover_rate = self.config.get("takeover_fee_rate", 0.1)
+            trade_config = self.config.get("trade", {})
+            takeover_rate = trade_config.get("takeover_fee_rate", 0.1)
             extra_cost = base_cost * takeover_rate
             total_cost += extra_cost
             compensation = total_cost
@@ -191,7 +194,8 @@ class ContractSystem(Star):
             return
 
         group_id = str(event.message_obj.group_id)
-        if not is_group_allowed(group_id, self.config.get("enabled_groups", [])):
+        basic_config = self.config.get("basic", {})
+        if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
             return
 
         target_id = get_target_at_user(event)
@@ -209,7 +213,8 @@ class ContractSystem(Star):
             yield event.plain_result("该用户不在你的雇员列表中。")
             return
 
-        sell_rate = self.config.get("sell_return_rate", 0.8)
+        trade_config = self.config.get("trade", {})
+        sell_rate = trade_config.get("sell_return_rate", 0.8)
         sell_price = (
             await self.wealth_system.calculate_dynamic_wealth_value(
                 group_id, target_data, target_id
@@ -236,7 +241,8 @@ class ContractSystem(Star):
             return
 
         group_id = str(event.message_obj.group_id)
-        if not is_group_allowed(group_id, self.config.get("enabled_groups", [])):
+        basic_config = self.config.get("basic", {})
+        if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
             return
 
         user_id = str(event.get_sender_id())
@@ -281,7 +287,8 @@ class ContractSystem(Star):
         await self.data_manager.save_user_data(group_id, user_id, user_data)
 
         # Generate card
-        bg_api_url = self.config.get("bg_api_url", "https://t.alcy.cc/ycy")
+        basic_config = self.config.get("basic", {})
+        bg_api_url = basic_config.get("bg_api_url", "https://t.alcy.cc/ycy")
         render_data = await self.card_renderer.generate_sign_card(
             event,
             is_penalized=is_penalized,
@@ -307,7 +314,8 @@ class ContractSystem(Star):
             return
 
         group_id = str(event.message_obj.group_id)
-        if not is_group_allowed(group_id, self.config.get("enabled_groups", [])):
+        basic_config = self.config.get("basic", {})
+        if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
             return
 
         # Get leaderboard from database
@@ -337,7 +345,8 @@ class ContractSystem(Star):
             return
 
         group_id = str(event.message_obj.group_id)
-        if not is_group_allowed(group_id, self.config.get("enabled_groups", [])):
+        basic_config = self.config.get("basic", {})
+        if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
             return
 
         user_id = str(event.get_sender_id())
@@ -366,7 +375,8 @@ class ContractSystem(Star):
         # Save user data
         await self.data_manager.save_user_data(group_id, user_id, user_data)
 
-        redeem_rate = self.config.get("redeem_return_rate", 0.5)
+        trade_config = self.config.get("trade", {})
+        redeem_rate = trade_config.get("redeem_return_rate", 0.5)
         compensation = cost * redeem_rate
         employer_data["coins"] += compensation
 
@@ -385,10 +395,11 @@ class ContractSystem(Star):
             return
 
         group_id = str(event.message_obj.group_id)
-        if not is_group_allowed(group_id, self.config.get("enabled_groups", [])):
+        basic_config = self.config.get("basic", {})
+        if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
             return
 
-        bg_api_url = self.config.get("bg_api_url", "https://t.alcy.cc/ycy")
+        bg_api_url = basic_config.get("bg_api_url", "https://t.alcy.cc/ycy")
         render_data = await self.card_renderer.generate_query_card(
             event, bg_api_url=bg_api_url
         )
@@ -411,7 +422,8 @@ class ContractSystem(Star):
             return
 
         group_id = str(event.message_obj.group_id)
-        if not is_group_allowed(group_id, self.config.get("enabled_groups", [])):
+        basic_config = self.config.get("basic", {})
+        if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
             return
 
         try:
@@ -444,7 +456,8 @@ class ContractSystem(Star):
             return
 
         group_id = str(event.message_obj.group_id)
-        if not is_group_allowed(group_id, self.config.get("enabled_groups", [])):
+        basic_config = self.config.get("basic", {})
+        if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
             return
 
         try:

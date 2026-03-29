@@ -1,56 +1,84 @@
 {
-  "enabled_groups": {
-    "type": "list",
-    "description": "允许使用功能的QQ群列表",
-    "default": [],
-    "hint": "只有在列表中的群才能触发插件功能，为空则允许所有群"
+  "basic": {
+    "description": "基础配置",
+    "type": "object",
+    "hint": "插件基础功能配置",
+    "items": {
+      "enabled_groups": {
+        "type": "list",
+        "description": "允许使用功能的QQ群列表",
+        "default": [],
+        "hint": "只有在列表中的群才能触发插件功能，为空则允许所有群"
+      },
+      "bg_api_url": {
+        "type": "string",
+        "description": "背景图片API地址",
+        "default": "https://t.alcy.cc/ycy",
+        "hint": "用于签到卡片背景的随机图片API。若失败则使用本地备用图。"
+      }
+    }
   },
-  "bg_api_url": {
-    "type": "string",
-    "description": "背景图片API地址",
-    "default": "https://t.alcy.cc/ycy",
-    "hint": "用于签到卡片背景的随机图片API。若失败则使用本地备用图。"
+  "trade": {
+    "description": "交易配置",
+    "type": "object",
+    "hint": "购买、出售、赎身等交易相关配置",
+    "items": {
+      "takeover_fee_rate": {
+        "type": "float",
+        "description": "恶意收购额外费用率",
+        "default": 0.1,
+        "hint": "例如，0.1代表收购他人雇员时，需额外支付10%的费用作为转让费。"
+      },
+      "sell_return_rate": {
+        "type": "float",
+        "description": "主动出售返还率",
+        "default": 0.8,
+        "hint": "例如，0.8代表主动出售雇员时，可以收回其当前身价的80%。"
+      },
+      "redeem_return_rate": {
+        "type": "float",
+        "description": "赎身时原雇主得款率",
+        "default": 0.5,
+        "hint": "例如，0.5代表当雇员赎身时，原雇主可以获得其赎身费用的50%作为补偿。"
+      }
+    }
   },
-  "takeover_fee_rate": {
-    "type": "float",
-    "description": "恶意收购额外费用率",
-    "default": 0.1,
-    "hint": "例如，0.1代表收购他人雇员时，需额外支付10%的费用作为转让费。"
+  "contract": {
+    "description": "契约配置",
+    "type": "object",
+    "hint": "雇员契约等级相关配置",
+    "items": {
+      "employed_income_rate": {
+        "type": "float",
+        "description": "被雇佣时收入惩罚率",
+        "default": 0.7,
+        "hint": "例如，0.7代表被雇佣的玩家签到时，最终收益只有正常的70%。"
+      },
+      "contract_level_price_bonus": {
+        "type": "float",
+        "description": "每级契约身价加成",
+        "default": 0.15,
+        "hint": "例如，0.15代表玩家的契约等级每提升1级，其身价在基础之上增加15%。"
+      },
+      "contract_level_rate_bonus": {
+        "type": "float",
+        "description": "每级契约增益加成",
+        "default": 0.075,
+        "hint": "例如，0.075代表玩家的契约等级每提升1级，为雇主提供的收益加成额外增加7.5%。"
+      }
+    }
   },
-  "sell_return_rate": {
-    "type": "float",
-    "description": "主动出售返还率",
-    "default": 0.8,
-    "hint": "例如，0.8代表主动出售雇员时，可以收回其当前身价的80%。"
-  },
-  "redeem_return_rate": {
-    "type": "float",
-    "description": "赎身时原雇主得款率",
-    "default": 0.5,
-    "hint": "例如，0.5代表当雇员赎身时，原雇主可以获得其赎身费用的50%作为补偿。"
-  },
-  "employed_income_rate": {
-    "type": "float",
-    "description": "被雇佣时收入惩罚率",
-    "default": 0.7,
-    "hint": "例如，0.7代表被雇佣的玩家签到时，最终收益只有正常的70%。"
-  },
-  "contract_level_price_bonus": {
-    "type": "float",
-    "description": "每级契约身价加成",
-    "default": 0.15,
-    "hint": "例如，0.15代表玩家的契约等级每提升1级，其身价在基础之上增加15%。"
-  },
-  "contract_level_rate_bonus": {
-    "type": "float",
-    "description": "每级契约增益加成",
-    "default": 0.075,
-    "hint": "例如，0.075代表玩家的契约等级每提升1级，为雇主提供的收益加成额外增加7.5%。"
-  },
-  "admin_price_bonus": {
-    "type": "float",
-    "description": "管理员价格加成比例",
-    "default": 0.5,
-    "hint": "例如，0.5代表管理员身价加成50%，且不可被购买。"
+  "admin": {
+    "description": "管理员配置",
+    "type": "object",
+    "hint": "群主/管理员相关配置",
+    "items": {
+      "admin_price_bonus": {
+        "type": "float",
+        "description": "管理员价格加成比例",
+        "default": 0.5,
+        "hint": "例如，0.5代表管理员身价加成50%，且不可被购买。"
+      }
+    }
   }
 }
