@@ -1,4 +1,10 @@
 {
+  "enabled_groups": {
+    "type": "list",
+    "description": "允许使用功能的QQ群列表",
+    "default": [],
+    "hint": "只有在列表中的群才能触发插件功能，为空则允许所有群"
+  },
   "bg_api_url": {
     "type": "string",
     "description": "背景图片API地址",

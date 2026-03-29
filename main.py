@@ -34,10 +34,10 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
 
 @register(
     "astrbot_plugin_sign",
-    "长安某",
+    "tianluoqaq",
     "二次元签到插件",
-    "2.0.0",
-    "https://github.com/zgojin/astrbot_plugin_sign",
+    "2.1.0",
+    "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -56,19 +56,42 @@ class ContractSystem(Star):
         self.purchase_data = {}
         asyncio.create_task(self._load_all_data_to_cache())
 
+    def _is_group_allowed(self, group_id: str) -> bool:
+        """检查群是否允许使用插件功能"""
+        enabled_groups = self.config.get("enabled_groups", [])
+        if not enabled_groups:
+            return True
+        return str(group_id) in [str(g) for g in enabled_groups]
+
+    def _get_target_at_user(self, event: AstrMessageEvent) -> str | None:
+        """获取消息中被at的目标用户ID（排除机器人自身）"""
+        msg_obj = getattr(event, "message_obj", None)
+        if not msg_obj:
+            return None
+
+        bot_id = getattr(msg_obj, "self_id", "")
+        chain = getattr(msg_obj, "message", None) or []
+
+        for component in chain:
+            if isinstance(component, At):
+                at_id = str(component.qq)
+                # 跳过机器人自身的at
+                if at_id != str(bot_id):
+                    return at_id
+        return None
+
     @filter.regex(r"^购买")
     async def purchase(self, event: AstrMessageEvent):
-        target_id = None
-        for component in event.message_obj.message:
-            if isinstance(component, At):
-                target_id = str(component.qq)
-                break
+        group_id = str(event.message_obj.group_id)
+        if not self._is_group_allowed(group_id):
+            return
+
+        target_id = self._get_target_at_user(event)
 
         if not target_id:
             yield event.plain_result("请使用@指定要购买的对象。")
             return
 
-        group_id = str(event.message_obj.group_id)
         user_id = str(event.get_sender_id())
 
         if user_id == target_id:
@@ -150,17 +173,16 @@ class ContractSystem(Star):
 
     @filter.regex(r"^出售")
     async def sell(self, event: AstrMessageEvent):
-        target_id = None
-        for component in event.message_obj.message:
-            if isinstance(component, At):
-                target_id = str(component.qq)
-                break
+        group_id = str(event.message_obj.group_id)
+        if not self._is_group_allowed(group_id):
+            return
+
+        target_id = self._get_target_at_user(event)
 
         if not target_id:
             yield event.plain_result("请使用@指定要出售的对象。")
             return
 
-        group_id = str(event.message_obj.group_id)
         user_id = str(event.get_sender_id())
 
         employer_data = self._get_user_data(self.sign_data, group_id, user_id)
@@ -188,6 +210,9 @@ class ContractSystem(Star):
     @filter.regex(r"^签到$")
     async def sign_in(self, event: AstrMessageEvent):
         group_id = str(event.message_obj.group_id)
+        if not self._is_group_allowed(group_id):
+            return
+
         user_id = str(event.get_sender_id())
         user_data = self._get_user_data(self.sign_data, group_id, user_id)
         now = datetime.now(SHANGHAI_TZ)
@@ -240,6 +265,9 @@ class ContractSystem(Star):
     @filter.regex(r"^(排行榜|财富榜)$")
     async def leaderboard(self, event: AstrMessageEvent):
         group_id = str(event.message_obj.group_id)
+        if not self._is_group_allowed(group_id):
+            return
+
         group_data = self.sign_data.get(group_id)
         if not group_data:
             yield event.plain_result("本群暂无签到数据，无法生成排行榜。")
@@ -270,6 +298,9 @@ class ContractSystem(Star):
     @filter.regex(r"^赎身$")
     async def terminate_contract(self, event: AstrMessageEvent):
         group_id = str(event.message_obj.group_id)
+        if not self._is_group_allowed(group_id):
+            return
+
         user_id = str(event.get_sender_id())
         user_data = self._get_user_data(self.sign_data, group_id, user_id)
         if not user_data["contracted_by"]:
@@ -305,6 +336,10 @@ class ContractSystem(Star):
 
     @filter.regex(r"^(我的信息|签到查询|我的资产)$")
     async def sign_query(self, event: AstrMessageEvent):
+        group_id = str(event.message_obj.group_id)
+        if not self._is_group_allowed(group_id):
+            return
+
         html_url = await self._generate_card_html(event, is_query=True)
         if html_url:
             yield event.image_result(html_url)
@@ -313,6 +348,10 @@ class ContractSystem(Star):
 
     @filter.regex(r"^(存款|存钱)\s+([0-9.]+)$")
     async def deposit(self, event: AstrMessageEvent, amount_str: str):
+        group_id = str(event.message_obj.group_id)
+        if not self._is_group_allowed(group_id):
+            return
+
         try:
             amount = float(amount_str)
             if amount <= 0:
@@ -321,7 +360,6 @@ class ContractSystem(Star):
         except ValueError:
             yield event.plain_result("金额格式不正确，请使用：存款 <数字>")
             return
-        group_id = str(event.message_obj.group_id)
         user_id = str(event.get_sender_id())
         user_data = self._get_user_data(self.sign_data, group_id, user_id)
         if amount > user_data["coins"]:
@@ -334,6 +372,10 @@ class ContractSystem(Star):
 
     @filter.regex(r"^(取款|取钱)\s+([0-9.]+)$")
     async def withdraw(self, event: AstrMessageEvent, amount_str: str):
+        group_id = str(event.message_obj.group_id)
+        if not self._is_group_allowed(group_id):
+            return
+
         try:
             amount = float(amount_str)
             if amount <= 0:
@@ -342,7 +384,6 @@ class ContractSystem(Star):
         except ValueError:
             yield event.plain_result("金额格式不正确，请使用：取款 <数字>")
             return
-        group_id = str(event.message_obj.group_id)
         user_id = str(event.get_sender_id())
         user_data = self._get_user_data(self.sign_data, group_id, user_id)
         if amount > user_data["bank"]:
