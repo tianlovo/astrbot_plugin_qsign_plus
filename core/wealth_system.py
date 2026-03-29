@@ -75,7 +75,7 @@ class WealthSystem:
             if total >= min_coin:
                 base_value = WEALTH_BASE_VALUES[name]
                 break
-        contract_level = self.data_manager.get_purchase_count(user_id)
+        contract_level = await self.data_manager.get_purchase_count(user_id)
         contract_config = self.config.get("contract", {})
         price_bonus = contract_config.get("contract_level_price_bonus", 0.15)
         return base_value * (1 + contract_level * price_bonus)
@@ -100,7 +100,7 @@ class WealthSystem:
                 group_id, contractor_id
             )
             _, base_rate = self.get_wealth_info(contractor_data)
-            contract_level = self.data_manager.get_purchase_count(contractor_id)
+            contract_level = await self.data_manager.get_purchase_count(contractor_id)
             total_rate += base_rate + (contract_level * rate_bonus)
         return total_rate
 

@@ -1,6 +1,4 @@
 pillow
-requests
 pytz
-pyyaml
 aiohttp
 aiosqlite

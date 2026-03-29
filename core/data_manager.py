@@ -2,14 +2,12 @@
 数据管理模块
 
 提供用户数据的读写、缓存管理等功能。
-使用SQLite数据库存储用户财富数据和雇员关系，使用YAML存储购买次数配置。
+使用SQLite数据库存储所有数据（用户财富、雇员关系、购买次数）。
 """
 
 import os
 from pathlib import Path
 
-import aiofiles
-import yaml
 from astrbot.api import logger
 
 from .database import QsignDatabase
@@ -19,7 +17,7 @@ class DataManager:
     """数据管理器
 
     管理用户签到数据、购买记录等数据的读写和缓存。
-    用户财富数据和雇员关系存储在SQLite数据库中，购买次数存储在YAML中。
+    所有数据统一存储在SQLite数据库中。
     """
 
     def __init__(self, plugin_dir: str):
@@ -33,76 +31,55 @@ class DataManager:
         self.data_file = os.path.join(self.data_dir, "sign_data.yml")
         self.purchase_data_file = os.path.join(self.data_dir, "purchase_counts.yml")
 
-        self.sign_data: dict = {}
-        self.purchase_data: dict = {}
-
         # Initialize database
         self.db = QsignDatabase()
-
-        self._init_env()
-
-    def _init_env(self):
-        """初始化数据目录"""
-        os.makedirs(self.data_dir, exist_ok=True)
-        if not os.path.exists(self.purchase_data_file):
-            with open(self.purchase_data_file, "w", encoding="utf-8") as f:
-                yaml.dump({}, f)
 
     async def init(self):
         """异步初始化数据库连接并迁移数据"""
         await self.db.init()
 
-        # Load purchase data from YAML
-        self.purchase_data = await self._load_yaml_async(self.purchase_data_file)
-
         # Check if there's old YAML data to migrate
+        purchase_data = {}
+        yaml_data = {}
+
+        # Load purchase data from YAML if exists
+        if os.path.exists(self.purchase_data_file):
+            try:
+                import yaml
+                with open(self.purchase_data_file, "r", encoding="utf-8") as f:
+                    purchase_data = yaml.safe_load(f) or {}
+                logger.info(f"已从YAML加载购买次数数据: {len(purchase_data)} 条")
+            except Exception as e:
+                logger.warning(f"加载YAML购买次数数据失败: {e}")
+
+        # Load user data from YAML if exists
         if os.path.exists(self.data_file):
-            yaml_data = await self._load_yaml_async(self.data_file)
-            if yaml_data:
-                user_count, contractor_count = await self.db.migrate_from_yaml(yaml_data)
-                if user_count > 0:
-                    logger.info(f"已从YAML迁移 {user_count} 个用户数据到数据库")
-                # Rename old file to prevent re-migration
+            try:
+                import yaml
+                with open(self.data_file, "r", encoding="utf-8") as f:
+                    yaml_data = yaml.safe_load(f) or {}
+            except Exception as e:
+                logger.warning(f"加载YAML用户数据失败: {e}")
+
+        # Migrate data if any
+        if yaml_data or purchase_data:
+            user_count, contractor_count, purchase_count = await self.db.migrate_from_yaml(
+                yaml_data, purchase_data
+            )
+            if user_count > 0 or purchase_count > 0:
+                logger.info(
+                    f"已从YAML迁移 {user_count} 个用户, "
+                    f"{contractor_count} 个雇员关系, {purchase_count} 个购买次数到数据库"
+                )
+            # Rename old files to prevent re-migration
+            if os.path.exists(self.data_file):
                 backup_file = self.data_file + ".backup"
                 os.rename(self.data_file, backup_file)
-                logger.info(f"原YAML数据已备份到: {backup_file}")
-
-    async def _load_yaml_async(self, file_path: str) -> dict:
-        """异步加载YAML文件
-
-        Args:
-            file_path: 文件路径
-
-        Returns:
-            解析后的字典数据
-        """
-        try:
-            async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
-                content = await f.read()
-                return yaml.safe_load(content) or {}
-        except FileNotFoundError:
-            return {}
-        except Exception as e:
-            logger.error(f"异步加载YAML文件失败 ({file_path}): {e}")
-            return {}
-
-    async def _save_yaml_async(self, data: dict, file_path: str):
-        """异步保存YAML文件
-
-        Args:
-            data: 要保存的字典数据
-            file_path: 文件路径
-        """
-        try:
-            async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
-                content = yaml.dump(data, allow_unicode=True)
-                await f.write(content)
-        except Exception as e:
-            logger.error(f"异步保存YAML文件失败 ({file_path}): {e}")
-
-    async def save_purchase_data(self):
-        """保存购买记录数据"""
-        await self._save_yaml_async(self.purchase_data, self.purchase_data_file)
+                logger.info(f"原YAML用户数据已备份到: {backup_file}")
+            if os.path.exists(self.purchase_data_file):
+                backup_file = self.purchase_data_file + ".backup"
+                os.rename(self.purchase_data_file, backup_file)
+                logger.info(f"原YAML购买次数数据已备份到: {backup_file}")
 
     async def get_user_data(self, group_id: str, user_id: str) -> dict:
         """获取用户数据
@@ -189,7 +166,7 @@ class DataManager:
         """
         return await self.db.get_leaderboard(group_id, limit)
 
-    def get_purchase_count(self, user_id: str) -> int:
+    async def get_purchase_count(self, user_id: str) -> int:
         """获取用户被购买次数
 
         Args:
@@ -198,15 +175,15 @@ class DataManager:
         Returns:
             被购买次数
         """
-        return self.purchase_data.get(str(user_id), 0)
+        return await self.db.get_purchase_count(user_id)
 
-    def increment_purchase_count(self, user_id: str):
+    async def increment_purchase_count(self, user_id: str):
         """增加用户被购买次数
 
         Args:
             user_id: 用户ID
         """
-        self.purchase_data[str(user_id)] = self.purchase_data.get(str(user_id), 0) + 1
+        await self.db.increment_purchase_count(user_id)
 
     async def close(self):
         """关闭数据库连接"""

@@ -120,6 +120,16 @@ class QsignDatabase:
                 )
             """)
 
+            # 创建购买次数表
+            await self._conn.execute("""
+                CREATE TABLE IF NOT EXISTS purchase_counts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL UNIQUE,
+                    count INTEGER DEFAULT 0,
+                    updated_at INTEGER NOT NULL
+                )
+            """)
+
             # 创建索引
             await self._conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_user_wealth_group 
@@ -474,22 +484,78 @@ class QsignDatabase:
             logger.error(f"[{self.plugin_name}] 清空雇员列表失败: {e}")
             return False
 
+    async def get_purchase_count(self, user_id: str) -> int:
+        """获取用户被购买次数
+
+        Args:
+            user_id: 用户ID
+
+        Returns:
+            被购买次数
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            async with self._conn.execute(
+                "SELECT count FROM purchase_counts WHERE user_id = ?",
+                (str(user_id),),
+            ) as cursor:
+                row = await cursor.fetchone()
+                return row["count"] if row else 0
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 获取购买次数失败: {e}")
+            return 0
+
+    async def increment_purchase_count(self, user_id: str) -> bool:
+        """增加用户被购买次数
+
+        Args:
+            user_id: 用户ID
+
+        Returns:
+            是否成功
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            now = int(time.time())
+            await self._conn.execute(
+                """
+                INSERT INTO purchase_counts (user_id, count, updated_at)
+                VALUES (?, 1, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                count = count + 1,
+                updated_at = ?
+                """,
+                (str(user_id), now, now),
+            )
+            await self._conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 增加购买次数失败: {e}")
+            return False
+
     async def migrate_from_yaml(
-        self, yaml_data: dict[str, dict[str, dict]]
-    ) -> tuple[int, int]:
+        self, yaml_data: dict[str, dict[str, dict]],
+        purchase_data: dict[str, int] | None = None
+    ) -> tuple[int, int, int]:
         """从YAML数据迁移到数据库
 
         Args:
             yaml_data: YAML格式的数据 {group_id: {user_id: user_data}}
+            purchase_data: 购买次数数据 {user_id: count}
 
         Returns:
-            (迁移的用户数, 迁移的雇员关系数)
+            (迁移的用户数, 迁移的雇员关系数, 迁移的购买次数)
         """
         if not self._conn:
             raise RuntimeError("数据库未初始化")
 
         user_count = 0
         contractor_count = 0
+        purchase_count = 0
 
         try:
             for group_id, group_data in yaml_data.items():
@@ -513,15 +579,33 @@ class QsignDatabase:
                         await self.add_contractor(group_id, user_id, contractor_id)
                         contractor_count += 1
 
+            # 迁移购买次数
+            if purchase_data:
+                for user_id, count in purchase_data.items():
+                    if count > 0:
+                        now = int(time.time())
+                        await self._conn.execute(
+                            """
+                            INSERT INTO purchase_counts (user_id, count, updated_at)
+                            VALUES (?, ?, ?)
+                            ON CONFLICT(user_id) DO UPDATE SET
+                            count = ?,
+                            updated_at = ?
+                            """,
+                            (str(user_id), count, now, count, now),
+                        )
+                        purchase_count += 1
+                await self._conn.commit()
+
             logger.info(
                 f"[{self.plugin_name}] 数据迁移完成: "
-                f"{user_count} 个用户, {contractor_count} 个雇员关系"
+                f"{user_count} 个用户, {contractor_count} 个雇员关系, {purchase_count} 个购买次数"
             )
-            return user_count, contractor_count
+            return user_count, contractor_count, purchase_count
 
         except Exception as e:
             logger.error(f"[{self.plugin_name}] 数据迁移失败: {e}")
-            return 0, 0
+            return 0, 0, 0
 
     async def close(self) -> None:
         """关闭数据库连接"""

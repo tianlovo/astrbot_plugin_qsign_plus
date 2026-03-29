@@ -22,7 +22,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.4.0",
+    "2.5.0",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -176,8 +176,7 @@ class ContractSystem(Star):
                 group_id, original_owner_id, original_owner_data
             )
 
-            self.data_manager.increment_purchase_count(target_id)
-            await self.data_manager.save_purchase_data()
+            await self.data_manager.increment_purchase_count(target_id)
 
             target_name = await self._get_user_name_from_platform(event, target_id)
             original_owner_name = await self._get_user_name_from_platform(
@@ -203,8 +202,7 @@ class ContractSystem(Star):
         # Save user data
         await self.data_manager.save_user_data(group_id, user_id, employer_data)
 
-        self.data_manager.increment_purchase_count(target_id)
-        await self.data_manager.save_purchase_data()
+        await self.data_manager.increment_purchase_count(target_id)
 
         target_name = await self._get_user_name_from_platform(event, target_id)
         yield event.plain_result(f"成功雇佣 {target_name}，消耗{total_cost:.1f}金币。")

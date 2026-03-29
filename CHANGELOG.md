@@ -1,5 +1,34 @@
 # Changelog
 
+## v2.5.0 (2026-03-29)
+
+### 重构
+- **完全移除YAML存储**: 所有数据统一使用SQLite数据库存储
+  - 新增 `purchase_counts` 表存储用户被购买次数
+  - 数据库新增 `get_purchase_count` 和 `increment_purchase_count` 方法
+  - 更新 `migrate_from_yaml` 方法支持迁移购买次数数据
+  - 数据管理器完全移除YAML文件操作
+
+- **数据管理器简化**: 重构 `core/data_manager.py`
+  - 移除 `aiofiles` 和 `yaml` 导入
+  - 移除YAML文件路径和初始化代码
+  - 移除 `_load_yaml_async` 和 `_save_yaml_async` 方法
+  - 移除 `save_purchase_data` 方法
+  - `get_purchase_count` 和 `increment_purchase_count` 改为异步方法
+  - 简化 `init` 方法，统一处理YAML数据迁移
+
+- **财富系统更新**: 更新 `core/wealth_system.py`
+  - `get_purchase_count` 调用添加 `await`
+
+- **主程序更新**: 更新 `main.py`
+  - `increment_purchase_count` 调用添加 `await`
+  - 移除 `save_purchase_data` 调用
+
+### 其他
+- **依赖更新**: 从 `requirements.txt` 移除 `pyyaml` 和 `requests`
+- **文档更新**: 更新 `README.md`，添加数据存储说明和详细配置项说明
+- **配置结构**: 配置文件使用父子级分类结构（basic/trade/contract/admin）
+
 ## v2.4.0 (2026-03-29)
 
 ### 重构
