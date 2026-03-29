@@ -1,34 +1,20 @@
 import asyncio
-import base64
 import os
 from datetime import datetime
 
-import aiofiles
-import aiohttp
 import pytz
-import yaml
 
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, filter
-from astrbot.api.message_components import At
 from astrbot.api.star import Context, Star, register
 
+from .core.data_manager import DataManager
+from .core.wealth_system import WealthSystem
+from .services.card_renderer import CardRenderer
+from .services.image_cache import ImageCacheService
+from .utils.helpers import get_target_at_user, is_at_bot, is_group_allowed
+
 PLUGIN_DIR = os.path.dirname(__file__)
-DATA_DIR = os.path.join("data", "astrbot_plugin_Qsign")
-DATA_FILE = os.path.join(DATA_DIR, "sign_data.yml")
-PURCHASE_DATA_FILE = os.path.join(DATA_DIR, "purchase_counts.yml")
-
-# API配置
-AVATAR_API = "http://q.qlogo.cn/headimg_dl?dst_uin={}&spec=640&img_type=jpg"
-
-WEALTH_LEVELS = [
-    (0, "平民", 0.25),
-    (500, "小资", 0.5),
-    (2000, "富豪", 0.75),
-    (5000, "巨擘", 1.0),
-]
-WEALTH_BASE_VALUES = {"平民": 100.0, "小资": 500.0, "富豪": 2000.0, "巨擘": 5000.0}
-BASE_INCOME = 100.0
 SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
 
 
@@ -36,76 +22,68 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_sign",
     "tianluoqaq",
     "二次元签到插件",
-    "2.2.0",
+    "2.3.0",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
         self.config = config
-        self.font_path = os.path.join(PLUGIN_DIR, "请以你的名字呼唤我.ttf")
-        self.template_path = os.path.join(PLUGIN_DIR, "card_template.html")
-        self.default_bg_path = os.path.join(PLUGIN_DIR, "default_bg.jpg")
 
-        timeout = aiohttp.ClientTimeout(total=10)
-        self.session = aiohttp.ClientSession(timeout=timeout)
-        self._init_env()
-        self.html_template = self._load_template()
+        # Initialize services
+        self.data_manager = DataManager(PLUGIN_DIR)
+        self.wealth_system = WealthSystem(self.data_manager, config)
+        self.image_cache = ImageCacheService()
+        self.card_renderer = CardRenderer(
+            PLUGIN_DIR,
+            self.data_manager,
+            self.wealth_system,
+            self.image_cache,
+        )
 
-        self.sign_data = {}
-        self.purchase_data = {}
-        asyncio.create_task(self._load_all_data_to_cache())
+        # Load data to cache
+        asyncio.create_task(self.data_manager.load_all_data())
 
-    def _is_group_allowed(self, group_id: str) -> bool:
-        """检查群是否允许使用插件功能"""
-        enabled_groups = self.config.get("enabled_groups", [])
-        if not enabled_groups:
-            return True
-        return str(group_id) in [str(g) for g in enabled_groups]
+    async def _is_user_admin(self, event: AstrMessageEvent, user_id: str) -> bool:
+        """检查用户是否为群主或管理员
 
-    def _get_target_at_user(self, event: AstrMessageEvent) -> str | None:
-        """获取消息中被at的目标用户ID（排除机器人自身）"""
-        msg_obj = getattr(event, "message_obj", None)
-        if not msg_obj:
-            return None
+        Args:
+            event: 消息事件
+            user_id: 用户ID
 
-        bot_id = getattr(msg_obj, "self_id", "")
-        chain = getattr(msg_obj, "message", None) or []
+        Returns:
+            是否为群主或管理员
+        """
+        if event.get_platform_name() == "aiocqhttp":
+            try:
+                from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
+                    AiocqhttpMessageEvent,
+                )
 
-        for component in chain:
-            if isinstance(component, At):
-                at_id = str(component.qq)
-                # 跳过机器人自身的at
-                if at_id != str(bot_id):
-                    return at_id
-        return None
-
-    def _is_at_bot(self, event: AstrMessageEvent) -> bool:
-        """检查消息是否at了机器人"""
-        msg_obj = getattr(event, "message_obj", None)
-        if not msg_obj:
-            return False
-
-        bot_id = getattr(msg_obj, "self_id", "")
-        chain = getattr(msg_obj, "message", None) or []
-
-        for component in chain:
-            if isinstance(component, At):
-                at_id = str(component.qq)
-                if at_id == str(bot_id):
-                    return True
+                if isinstance(event, AiocqhttpMessageEvent):
+                    client = event.bot
+                    resp = await client.api.call_action(
+                        "get_group_member_info",
+                        group_id=event.message_obj.group_id,
+                        user_id=int(user_id),
+                        no_cache=True,
+                    )
+                    role = resp.get("role", "member")
+                    return role in ["owner", "admin"]
+            except Exception as e:
+                logger.warning(f"检查用户权限失败({user_id}): {e}")
         return False
 
     @filter.regex(r"^购买")
     async def purchase(self, event: AstrMessageEvent):
-        if not self._is_at_bot(event):
+        if not is_at_bot(event):
             return
 
         group_id = str(event.message_obj.group_id)
-        if not self._is_group_allowed(group_id):
+        if not is_group_allowed(group_id, self.config.get("enabled_groups", [])):
             return
 
-        target_id = self._get_target_at_user(event)
+        target_id = get_target_at_user(event)
 
         if not target_id:
             yield event.plain_result("请使用@指定要购买的对象。")
@@ -117,15 +95,23 @@ class ContractSystem(Star):
             yield event.plain_result("您不能购买自己。")
             return
 
-        employer_data = self._get_user_data(self.sign_data, group_id, user_id)
-        target_data = self._get_user_data(self.sign_data, group_id, target_id)
+        # 检查目标用户是否为群主/管理员
+        if await self._is_user_admin(event, target_id):
+            admin_bonus = self.config.get("admin_price_bonus", 0.5)
+            yield event.plain_result(
+                f"无法购买群主或管理员！管理员身价加成 {admin_bonus * 100}%，不可被购买。"
+            )
+            return
+
+        employer_data = self.data_manager.get_user_data(group_id, user_id)
+        target_data = self.data_manager.get_user_data(group_id, target_id)
 
         if len(employer_data["contractors"]) >= 3:
             yield event.plain_result("已达到最大雇佣数量（3人）。")
             return
 
-        base_cost = self._calculate_dynamic_wealth_value(
-            target_data, self.purchase_data, target_id
+        base_cost = self.wealth_system.calculate_dynamic_wealth_value(
+            target_data, target_id
         )
         total_cost = base_cost
         original_owner_id = target_data.get("contracted_by")
@@ -146,8 +132,8 @@ class ContractSystem(Star):
                 )
                 return
 
-            original_owner_data = self._get_user_data(
-                self.sign_data, group_id, original_owner_id
+            original_owner_data = self.data_manager.get_user_data(
+                group_id, original_owner_id
             )
             if target_id in original_owner_data["contractors"]:
                 original_owner_data["contractors"].remove(target_id)
@@ -158,10 +144,10 @@ class ContractSystem(Star):
             employer_data["contractors"].append(target_id)
             target_data["contracted_by"] = user_id
 
-            self.purchase_data[target_id] = self.purchase_data.get(target_id, 0) + 1
+            self.data_manager.increment_purchase_count(target_id)
 
-            await self._save_yaml_async(self.sign_data, DATA_FILE)
-            await self._save_yaml_async(self.purchase_data, PURCHASE_DATA_FILE)
+            await self.data_manager.save_sign_data()
+            await self.data_manager.save_purchase_data()
 
             target_name = await self._get_user_name_from_platform(event, target_id)
             original_owner_name = await self._get_user_name_from_platform(
@@ -183,23 +169,23 @@ class ContractSystem(Star):
         employer_data["contractors"].append(target_id)
         target_data["contracted_by"] = user_id
 
-        self.purchase_data[target_id] = self.purchase_data.get(target_id, 0) + 1
-        await self._save_yaml_async(self.sign_data, DATA_FILE)
-        await self._save_yaml_async(self.purchase_data, PURCHASE_DATA_FILE)
+        self.data_manager.increment_purchase_count(target_id)
+        await self.data_manager.save_sign_data()
+        await self.data_manager.save_purchase_data()
 
         target_name = await self._get_user_name_from_platform(event, target_id)
         yield event.plain_result(f"成功雇佣 {target_name}，消耗{total_cost:.1f}金币。")
 
     @filter.regex(r"^出售")
     async def sell(self, event: AstrMessageEvent):
-        if not self._is_at_bot(event):
+        if not is_at_bot(event):
             return
 
         group_id = str(event.message_obj.group_id)
-        if not self._is_group_allowed(group_id):
+        if not is_group_allowed(group_id, self.config.get("enabled_groups", [])):
             return
 
-        target_id = self._get_target_at_user(event)
+        target_id = get_target_at_user(event)
 
         if not target_id:
             yield event.plain_result("请使用@指定要出售的对象。")
@@ -207,23 +193,21 @@ class ContractSystem(Star):
 
         user_id = str(event.get_sender_id())
 
-        employer_data = self._get_user_data(self.sign_data, group_id, user_id)
-        target_data = self._get_user_data(self.sign_data, group_id, target_id)
+        employer_data = self.data_manager.get_user_data(group_id, user_id)
+        target_data = self.data_manager.get_user_data(group_id, target_id)
         if target_id not in employer_data["contractors"]:
             yield event.plain_result("该用户不在你的雇员列表中。")
             return
 
         sell_rate = self.config.get("sell_return_rate", 0.8)
         sell_price = (
-            self._calculate_dynamic_wealth_value(
-                target_data, self.purchase_data, target_id
-            )
+            self.wealth_system.calculate_dynamic_wealth_value(target_data, target_id)
             * sell_rate
         )
         employer_data["coins"] += sell_price
         employer_data["contractors"].remove(target_id)
         target_data["contracted_by"] = None
-        await self._save_yaml_async(self.sign_data, DATA_FILE)
+        await self.data_manager.save_sign_data()
         target_name = await self._get_user_name_from_platform(event, target_id)
         yield event.plain_result(
             f"成功解雇 {target_name}，获得补偿金{sell_price:.1f}金币。"
@@ -231,15 +215,15 @@ class ContractSystem(Star):
 
     @filter.regex(r"^签到$")
     async def sign_in(self, event: AstrMessageEvent):
-        if not self._is_at_bot(event):
+        if not is_at_bot(event):
             return
 
         group_id = str(event.message_obj.group_id)
-        if not self._is_group_allowed(group_id):
+        if not is_group_allowed(group_id, self.config.get("enabled_groups", [])):
             return
 
         user_id = str(event.get_sender_id())
-        user_data = self._get_user_data(self.sign_data, group_id, user_id)
+        user_data = self.data_manager.get_user_data(group_id, user_id)
         now = datetime.now(SHANGHAI_TZ)
         today = now.date()
         if user_data["last_sign"]:
@@ -254,49 +238,56 @@ class ContractSystem(Star):
                 user_data["consecutive"] = 1
         else:
             user_data["consecutive"] = 1
+
         interest = user_data["bank"] * 0.01
         user_data["bank"] += interest
-        _, user_base_rate = self._get_wealth_info(user_data)
 
-        contractor_dynamic_rates = self._get_total_contractor_rate(
-            group_id, user_data["contractors"]
-        )
+        is_penalized = bool(user_data["contracted_by"])
 
-        consecutive_bonus = 10 * (user_data["consecutive"] - 1)
-        earned = (
-            BASE_INCOME * (1 + user_base_rate) * (1 + contractor_dynamic_rates)
-            + consecutive_bonus
-        )
-        original_earned = earned
-        is_penalized = False
-        if user_data["contracted_by"]:
-            income_rate = self.config.get("employed_income_rate", 0.7)
-            earned *= income_rate
-            is_penalized = True
+        (
+            earned,
+            original_earned,
+            _,
+            _,
+            _,
+            _,
+        ) = self.wealth_system.calculate_sign_income(user_data, group_id, is_penalized)
+
         user_data["coins"] += earned
         user_data["last_sign"] = now.replace(tzinfo=None).isoformat()
-        await self._save_yaml_async(self.sign_data, DATA_FILE)
-        html_url = await self._generate_card_html(
+        await self.data_manager.save_sign_data()
+
+        # Generate card
+        bg_api_url = self.config.get("bg_api_url", "https://t.alcy.cc/ycy")
+        render_data = await self.card_renderer.generate_sign_card(
             event,
-            is_query=False,
             is_penalized=is_penalized,
             original_earned=original_earned,
+            bg_api_url=bg_api_url,
         )
-        if html_url:
-            yield event.image_result(html_url)
-        else:
+
+        try:
+            html_url = await self.html_render(
+                self.card_renderer.get_template(), render_data
+            )
+            if html_url:
+                yield event.image_result(html_url)
+            else:
+                yield event.plain_result("签到成功！但图片生成失败。")
+        except Exception as e:
+            logger.error(f"HTML 渲染失败: {e}")
             yield event.plain_result("签到成功！但图片生成失败。")
 
     @filter.regex(r"^(排行榜|财富榜)$")
     async def leaderboard(self, event: AstrMessageEvent):
-        if not self._is_at_bot(event):
+        if not is_at_bot(event):
             return
 
         group_id = str(event.message_obj.group_id)
-        if not self._is_group_allowed(group_id):
+        if not is_group_allowed(group_id, self.config.get("enabled_groups", [])):
             return
 
-        group_data = self.sign_data.get(group_id)
+        group_data = self.data_manager.sign_data.get(group_id)
         if not group_data:
             yield event.plain_result("本群暂无签到数据，无法生成排行榜。")
             return
@@ -325,28 +316,26 @@ class ContractSystem(Star):
 
     @filter.regex(r"^赎身$")
     async def terminate_contract(self, event: AstrMessageEvent):
-        if not self._is_at_bot(event):
+        if not is_at_bot(event):
             return
 
         group_id = str(event.message_obj.group_id)
-        if not self._is_group_allowed(group_id):
+        if not is_group_allowed(group_id, self.config.get("enabled_groups", [])):
             return
 
         user_id = str(event.get_sender_id())
-        user_data = self._get_user_data(self.sign_data, group_id, user_id)
+        user_data = self.data_manager.get_user_data(group_id, user_id)
         if not user_data["contracted_by"]:
             yield event.plain_result("您是自由身，无需赎身。")
             return
 
-        cost = self._calculate_dynamic_wealth_value(
-            user_data, self.purchase_data, user_id
-        )
+        cost = self.wealth_system.calculate_dynamic_wealth_value(user_data, user_id)
         if user_data["coins"] < cost:
             yield event.plain_result(f"金币不足，需要支付赎身费用：{cost:.1f}金币。")
             return
 
         employer_id = user_data["contracted_by"]
-        employer_data = self._get_user_data(self.sign_data, group_id, employer_id)
+        employer_data = self.data_manager.get_user_data(group_id, employer_id)
 
         user_data["coins"] -= cost
         if user_id in employer_data["contractors"]:
@@ -357,7 +346,7 @@ class ContractSystem(Star):
         compensation = cost * redeem_rate
         employer_data["coins"] += compensation
 
-        await self._save_yaml_async(self.sign_data, DATA_FILE)
+        await self.data_manager.save_sign_data()
 
         employer_name = await self._get_user_name_from_platform(event, employer_id)
         yield event.plain_result(
@@ -367,26 +356,37 @@ class ContractSystem(Star):
 
     @filter.regex(r"^(我的信息|签到查询|我的资产)$")
     async def sign_query(self, event: AstrMessageEvent):
-        if not self._is_at_bot(event):
+        if not is_at_bot(event):
             return
 
         group_id = str(event.message_obj.group_id)
-        if not self._is_group_allowed(group_id):
+        if not is_group_allowed(group_id, self.config.get("enabled_groups", [])):
             return
 
-        html_url = await self._generate_card_html(event, is_query=True)
-        if html_url:
-            yield event.image_result(html_url)
-        else:
+        bg_api_url = self.config.get("bg_api_url", "https://t.alcy.cc/ycy")
+        render_data = await self.card_renderer.generate_query_card(
+            event, bg_api_url=bg_api_url
+        )
+
+        try:
+            html_url = await self.html_render(
+                self.card_renderer.get_template(), render_data
+            )
+            if html_url:
+                yield event.image_result(html_url)
+            else:
+                yield event.plain_result("查询失败，图片生成服务出现问题。")
+        except Exception as e:
+            logger.error(f"HTML 渲染失败: {e}")
             yield event.plain_result("查询失败，图片生成服务出现问题。")
 
     @filter.regex(r"^(存款|存钱)\s+([0-9.]+)$")
     async def deposit(self, event: AstrMessageEvent, amount_str: str):
-        if not self._is_at_bot(event):
+        if not is_at_bot(event):
             return
 
         group_id = str(event.message_obj.group_id)
-        if not self._is_group_allowed(group_id):
+        if not is_group_allowed(group_id, self.config.get("enabled_groups", [])):
             return
 
         try:
@@ -398,22 +398,22 @@ class ContractSystem(Star):
             yield event.plain_result("金额格式不正确，请使用：存款 <数字>")
             return
         user_id = str(event.get_sender_id())
-        user_data = self._get_user_data(self.sign_data, group_id, user_id)
+        user_data = self.data_manager.get_user_data(group_id, user_id)
         if amount > user_data["coins"]:
             yield event.plain_result(f"现金不足，当前现金：{user_data['coins']:.1f}")
             return
         user_data["coins"] -= amount
         user_data["bank"] += amount
-        await self._save_yaml_async(self.sign_data, DATA_FILE)
+        await self.data_manager.save_sign_data()
         yield event.plain_result(f"成功存入 {amount:.1f} 金币到银行。")
 
     @filter.regex(r"^(取款|取钱)\s+([0-9.]+)$")
     async def withdraw(self, event: AstrMessageEvent, amount_str: str):
-        if not self._is_at_bot(event):
+        if not is_at_bot(event):
             return
 
         group_id = str(event.message_obj.group_id)
-        if not self._is_group_allowed(group_id):
+        if not is_group_allowed(group_id, self.config.get("enabled_groups", [])):
             return
 
         try:
@@ -425,101 +425,17 @@ class ContractSystem(Star):
             yield event.plain_result("金额格式不正确，请使用：取款 <数字>")
             return
         user_id = str(event.get_sender_id())
-        user_data = self._get_user_data(self.sign_data, group_id, user_id)
+        user_data = self.data_manager.get_user_data(group_id, user_id)
         if amount > user_data["bank"]:
             yield event.plain_result(f"银行存款不足，当前存款：{user_data['bank']:.1f}")
             return
         user_data["bank"] -= amount
         user_data["coins"] += amount
-        await self._save_yaml_async(self.sign_data, DATA_FILE)
+        await self.data_manager.save_sign_data()
         yield event.plain_result(f"成功取出 {amount:.1f} 金币。")
 
     async def terminate(self):
-        await self.session.close()
-
-    async def _load_yaml_async(self, file_path: str) -> dict:
-        try:
-            async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
-                content = await f.read()
-                return yaml.safe_load(content) or {}
-        except FileNotFoundError:
-            return {}
-        except Exception as e:
-            logger.error(f"异步加载YAML文件失败 ({file_path}): {e}")
-            return {}
-
-    async def _save_yaml_async(self, data: dict, file_path: str):
-        try:
-            async with aiofiles.open(file_path, "w", encoding="utf-8") as f:
-                content = yaml.dump(data, allow_unicode=True)
-                await f.write(content)
-        except Exception as e:
-            logger.error(f"异步保存YAML文件失败 ({file_path}): {e}")
-
-    async def _load_all_data_to_cache(self):
-        self.sign_data = await self._load_yaml_async(DATA_FILE)
-        self.purchase_data = await self._load_yaml_async(PURCHASE_DATA_FILE)
-        logger.info("签到插件数据已加载到缓存。")
-
-    def _init_env(self):
-        os.makedirs(DATA_DIR, exist_ok=True)
-        if not os.path.exists(DATA_FILE):
-            with open(DATA_FILE, "w", encoding="utf-8") as f:
-                yaml.dump({}, f)
-        if not os.path.exists(PURCHASE_DATA_FILE):
-            with open(PURCHASE_DATA_FILE, "w", encoding="utf-8") as f:
-                yaml.dump({}, f)
-        if not os.path.exists(self.font_path):
-            logger.warning(f"字体文件缺失: {self.font_path}")
-        if not os.path.exists(self.template_path):
-            logger.error(f"HTML模板文件缺失: {self.template_path}")
-        if not os.path.exists(self.default_bg_path):
-            logger.warning(f"备用背景图文件缺失: {self.default_bg_path}")
-
-    def _get_user_data(self, data_cache: dict, group_id: str, user_id: str) -> dict:
-        return data_cache.setdefault(str(group_id), {}).setdefault(
-            str(user_id),
-            {
-                "coins": 0.0,
-                "bank": 0.0,
-                "contractors": [],
-                "contracted_by": None,
-                "last_sign": None,
-                "consecutive": 0,
-            },
-        )
-
-    def _get_wealth_info(self, user_data: dict) -> tuple:
-        total = user_data.get("coins", 0.0) + user_data.get("bank", 0.0)
-        for min_coin, name, rate in reversed(WEALTH_LEVELS):
-            if total >= min_coin:
-                return name, rate
-        return "平民", 0.25
-
-    def _calculate_dynamic_wealth_value(
-        self, user_data: dict, purchase_counts: dict, user_id: str
-    ) -> float:
-        total = user_data.get("coins", 0.0) + user_data.get("bank", 0.0)
-        base_value = WEALTH_BASE_VALUES["平民"]
-        for min_coin, name, _ in reversed(WEALTH_LEVELS):
-            if total >= min_coin:
-                base_value = WEALTH_BASE_VALUES[name]
-                break
-        contract_level = purchase_counts.get(str(user_id), 0)
-        price_bonus = self.config.get("contract_level_price_bonus", 0.15)
-        return base_value * (1 + contract_level * price_bonus)
-
-    def _get_total_contractor_rate(self, group_id: str, contractor_ids: list) -> float:
-        total_rate = 0.0
-        rate_bonus = self.config.get("contract_level_rate_bonus", 0.075)
-        for contractor_id in contractor_ids:
-            contractor_data = self._get_user_data(
-                self.sign_data, group_id, contractor_id
-            )
-            _, base_rate = self._get_wealth_info(contractor_data)
-            contract_level = self.purchase_data.get(contractor_id, 0)
-            total_rate += base_rate + (contract_level * rate_bonus)
-        return total_rate
+        await self.image_cache.close()
 
     async def _get_user_name_from_platform(
         self, event: AstrMessageEvent, target_id: str
@@ -544,133 +460,3 @@ class ContractSystem(Star):
             except Exception as e:
                 logger.warning(f"通过API获取用户信息({target_id})失败: {e}")
         return f"用户{target_id[-4:]}"
-
-    async def _image_to_base64(self, url: str, max_retries: int = 3) -> str:
-        """下载图片并转换为base64，支持重试机制
-
-        Args:
-            url: 图片URL
-            max_retries: 最大重试次数，默认3次
-
-        Returns:
-            base64编码的图片数据，失败返回空字符串
-        """
-        for attempt in range(max_retries):
-            try:
-                async with self.session.get(url) as response:
-                    if response.status == 200:
-                        image_bytes = await response.read()
-                        encoded_string = base64.b64encode(image_bytes).decode("utf-8")
-                        return f"data:{response.headers.get('Content-Type', 'image/jpeg')};base64,{encoded_string}"
-                    else:
-                        logger.warning(f"下载图片失败 ({url})，状态码: {response.status}，尝试 {attempt + 1}/{max_retries}")
-            except Exception as e:
-                logger.warning(f"下载或转换图片时发生异常 ({url}): {e}，尝试 {attempt + 1}/{max_retries}")
-
-            if attempt < max_retries - 1:
-                await asyncio.sleep(0.5 * (attempt + 1))  # 指数退避
-
-        logger.error(f"下载图片最终失败 ({url})，已重试 {max_retries} 次")
-        return ""
-
-    def _file_to_base64(self, file_path: str) -> str:
-        if not os.path.exists(file_path):
-            return ""
-        try:
-            with open(file_path, "rb") as image_file:
-                encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
-                return f"data:image/jpeg;base64,{encoded_string}"
-        except Exception as e:
-            logger.error(f"读取本地图片文件失败 ({file_path}): {e}")
-            return ""
-
-    async def _generate_card_html(
-        self,
-        event: AstrMessageEvent,
-        is_query: bool,
-        is_penalized: bool = False,
-        original_earned: float = 0.0,
-    ) -> str:
-        bg_api_url = self.config.get("bg_api_url", "https://t.alcy.cc/ycy")
-        bg_image_data = await self._image_to_base64(bg_api_url)
-        if not bg_image_data:
-            bg_image_data = self._file_to_base64(self.default_bg_path)
-
-        group_id = str(event.message_obj.group_id)
-        user_id = str(event.get_sender_id())
-        user_data = self._get_user_data(self.sign_data, group_id, user_id)
-        avatar_data = await self._image_to_base64(AVATAR_API.format(user_id))
-        font_path = (
-            f"file://{os.path.abspath(self.font_path)}"
-            if os.path.exists(self.font_path)
-            else ""
-        )
-        wealth_level, user_base_rate = self._get_wealth_info(user_data)
-
-        render_data = {
-            "font_path": font_path,
-            "bg_image_data": bg_image_data,
-            "avatar_data": avatar_data,
-            "user_id": user_id,
-            "user_name": event.get_sender_name(),
-            "status": "受雇" if user_data["contracted_by"] else "自由",
-            "wealth_level": wealth_level,
-            "time_title": "查询时间" if is_query else "签到时间",
-            "current_time": datetime.now(SHANGHAI_TZ).strftime("%Y-%m-%d %H:%M:%S"),
-            "income_title": "明日预计收入" if is_query else "今日总收益",
-            "coins": user_data["coins"],
-            "bank": user_data["bank"],
-            "consecutive": user_data["consecutive"],
-            "is_query": is_query,
-            "is_penalized": is_penalized,
-            "original_earned": original_earned,
-        }
-
-        if is_query:
-            names = [
-                await self._get_user_name_from_platform(event, uid)
-                for uid in user_data["contractors"]
-            ]
-            render_data["contractors_display"] = ", ".join(names) if names else "无"
-            base_with_bonus = BASE_INCOME * (1 + user_base_rate)
-            contractor_dynamic_rates = self._get_total_contractor_rate(
-                group_id, user_data["contractors"]
-            )
-            contract_bonus = base_with_bonus * contractor_dynamic_rates
-            consecutive_bonus = 10 * user_data["consecutive"]
-            tomorrow_interest = user_data["bank"] * 0.01
-            render_data.update(
-                {
-                    "total_income": base_with_bonus
-                    + contract_bonus
-                    + consecutive_bonus
-                    + tomorrow_interest,
-                    "base_with_bonus": base_with_bonus,
-                    "contract_bonus": contract_bonus,
-                    "consecutive_bonus": consecutive_bonus,
-                    "tomorrow_interest": tomorrow_interest,
-                }
-            )
-        else:
-            render_data["contractors_display"] = str(len(user_data["contractors"]))
-            interest = user_data["bank"] * 0.01
-            earned = original_earned
-            if is_penalized:
-                income_rate = self.config.get("employed_income_rate", 0.7)
-                earned *= income_rate
-            render_data.update({"earned": earned + interest, "interest": interest})
-
-        try:
-            return await self.html_render(self.html_template, render_data)
-        except Exception as e:
-            logger.error(f"HTML 渲染失败: {e}")
-            return ""
-
-    def _load_template(self) -> str:
-        if os.path.exists(self.template_path):
-            try:
-                with open(self.template_path, "r", encoding="utf-8") as f:
-                    return f.read()
-            except Exception as e:
-                logger.error(f"读取HTML模板文件失败: {e}")
-        return "<h1>模板文件加载失败</h1>"

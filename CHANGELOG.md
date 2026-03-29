@@ -1,5 +1,25 @@
 # Changelog
 
+## v2.3.0 (2026-03-29)
+
+### 新增
+- **管理员保护机制**: 新增群主/管理员购买保护
+  - 新增 `_is_user_admin()` 方法检查用户是否为群主或管理员
+  - 购买指令现在会检查目标用户身份，群主/管理员不可被购买
+  - 新增 `admin_price_bonus` 配置项，默认 0.5（身价加成50%）
+
+- **卡片渲染服务**: 新增 `services/card_renderer.py` 模块
+  - 封装卡片渲染逻辑，支持签到卡片和信息查询卡片
+  - 使用 `ImageCacheService` 获取头像和背景图
+  - 支持 HTML 模板加载和渲染数据准备
+
+### 重构
+- **主程序架构优化**: 重构 `main.py` 文件
+  - 导入所有新模块（utils.helpers, core.data_manager, core.wealth_system, services.image_cache, services.card_renderer）
+  - 在 `__init__` 中初始化各服务（DataManager, WealthSystem, ImageCacheService, CardRenderer）
+  - 简化所有指令处理方法，调用模块接口
+  - 保留事件处理和流程编排逻辑
+
 ## v2.2.0 (2026-03-29)
 
 ### 修改
