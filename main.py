@@ -36,7 +36,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_sign",
     "tianluoqaq",
     "二次元签到插件",
-    "2.1.0",
+    "2.2.0",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -80,8 +80,27 @@ class ContractSystem(Star):
                     return at_id
         return None
 
+    def _is_at_bot(self, event: AstrMessageEvent) -> bool:
+        """检查消息是否at了机器人"""
+        msg_obj = getattr(event, "message_obj", None)
+        if not msg_obj:
+            return False
+
+        bot_id = getattr(msg_obj, "self_id", "")
+        chain = getattr(msg_obj, "message", None) or []
+
+        for component in chain:
+            if isinstance(component, At):
+                at_id = str(component.qq)
+                if at_id == str(bot_id):
+                    return True
+        return False
+
     @filter.regex(r"^购买")
     async def purchase(self, event: AstrMessageEvent):
+        if not self._is_at_bot(event):
+            return
+
         group_id = str(event.message_obj.group_id)
         if not self._is_group_allowed(group_id):
             return
@@ -173,6 +192,9 @@ class ContractSystem(Star):
 
     @filter.regex(r"^出售")
     async def sell(self, event: AstrMessageEvent):
+        if not self._is_at_bot(event):
+            return
+
         group_id = str(event.message_obj.group_id)
         if not self._is_group_allowed(group_id):
             return
@@ -209,6 +231,9 @@ class ContractSystem(Star):
 
     @filter.regex(r"^签到$")
     async def sign_in(self, event: AstrMessageEvent):
+        if not self._is_at_bot(event):
+            return
+
         group_id = str(event.message_obj.group_id)
         if not self._is_group_allowed(group_id):
             return
@@ -264,6 +289,9 @@ class ContractSystem(Star):
 
     @filter.regex(r"^(排行榜|财富榜)$")
     async def leaderboard(self, event: AstrMessageEvent):
+        if not self._is_at_bot(event):
+            return
+
         group_id = str(event.message_obj.group_id)
         if not self._is_group_allowed(group_id):
             return
@@ -297,6 +325,9 @@ class ContractSystem(Star):
 
     @filter.regex(r"^赎身$")
     async def terminate_contract(self, event: AstrMessageEvent):
+        if not self._is_at_bot(event):
+            return
+
         group_id = str(event.message_obj.group_id)
         if not self._is_group_allowed(group_id):
             return
@@ -336,6 +367,9 @@ class ContractSystem(Star):
 
     @filter.regex(r"^(我的信息|签到查询|我的资产)$")
     async def sign_query(self, event: AstrMessageEvent):
+        if not self._is_at_bot(event):
+            return
+
         group_id = str(event.message_obj.group_id)
         if not self._is_group_allowed(group_id):
             return
@@ -348,6 +382,9 @@ class ContractSystem(Star):
 
     @filter.regex(r"^(存款|存钱)\s+([0-9.]+)$")
     async def deposit(self, event: AstrMessageEvent, amount_str: str):
+        if not self._is_at_bot(event):
+            return
+
         group_id = str(event.message_obj.group_id)
         if not self._is_group_allowed(group_id):
             return
@@ -372,6 +409,9 @@ class ContractSystem(Star):
 
     @filter.regex(r"^(取款|取钱)\s+([0-9.]+)$")
     async def withdraw(self, event: AstrMessageEvent, amount_str: str):
+        if not self._is_at_bot(event):
+            return
+
         group_id = str(event.message_obj.group_id)
         if not self._is_group_allowed(group_id):
             return
@@ -505,19 +545,33 @@ class ContractSystem(Star):
                 logger.warning(f"通过API获取用户信息({target_id})失败: {e}")
         return f"用户{target_id[-4:]}"
 
-    async def _image_to_base64(self, url: str) -> str:
-        try:
-            async with self.session.get(url) as response:
-                if response.status == 200:
-                    image_bytes = await response.read()
-                    encoded_string = base64.b64encode(image_bytes).decode("utf-8")
-                    return f"data:{response.headers.get('Content-Type', 'image/jpeg')};base64,{encoded_string}"
-                else:
-                    logger.error(f"下载图片失败 ({url})，状态码: {response.status}")
-                    return ""
-        except Exception as e:
-            logger.error(f"下载或转换图片时发生异常 ({url}): {e}")
-            return ""
+    async def _image_to_base64(self, url: str, max_retries: int = 3) -> str:
+        """下载图片并转换为base64，支持重试机制
+
+        Args:
+            url: 图片URL
+            max_retries: 最大重试次数，默认3次
+
+        Returns:
+            base64编码的图片数据，失败返回空字符串
+        """
+        for attempt in range(max_retries):
+            try:
+                async with self.session.get(url) as response:
+                    if response.status == 200:
+                        image_bytes = await response.read()
+                        encoded_string = base64.b64encode(image_bytes).decode("utf-8")
+                        return f"data:{response.headers.get('Content-Type', 'image/jpeg')};base64,{encoded_string}"
+                    else:
+                        logger.warning(f"下载图片失败 ({url})，状态码: {response.status}，尝试 {attempt + 1}/{max_retries}")
+            except Exception as e:
+                logger.warning(f"下载或转换图片时发生异常 ({url}): {e}，尝试 {attempt + 1}/{max_retries}")
+
+            if attempt < max_retries - 1:
+                await asyncio.sleep(0.5 * (attempt + 1))  # 指数退避
+
+        logger.error(f"下载图片最终失败 ({url})，已重试 {max_retries} 次")
+        return ""
 
     def _file_to_base64(self, file_path: str) -> str:
         if not os.path.exists(file_path):
