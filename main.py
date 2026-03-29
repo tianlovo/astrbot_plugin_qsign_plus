@@ -12,7 +12,7 @@ from .core.data_manager import DataManager
 from .core.wealth_system import WealthSystem
 from .services.card_renderer import CardRenderer
 from .services.image_cache import ImageCacheService
-from .utils.helpers import get_target_at_user, is_at_bot, is_group_allowed
+from .utils.helpers import get_first_at_user, get_target_at_user, is_at_bot, is_group_allowed
 
 PLUGIN_DIR = os.path.dirname(__file__)
 SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
@@ -97,6 +97,10 @@ class ContractSystem(Star):
             return
 
         target_id = get_target_at_user(event)
+
+        # 如果没有找到非机器人的at，尝试获取第一个at（可能是机器人）
+        if not target_id:
+            target_id = get_first_at_user(event)
 
         if not target_id:
             yield event.plain_result("请使用@指定要购买的对象。")
@@ -218,6 +222,10 @@ class ContractSystem(Star):
             return
 
         target_id = get_target_at_user(event)
+
+        # 如果没有找到非机器人的at，尝试获取第一个at（可能是机器人）
+        if not target_id:
+            target_id = get_first_at_user(event)
 
         if not target_id:
             yield event.plain_result("请使用@指定要出售的对象。")

@@ -57,6 +57,27 @@ def get_target_at_user(event: AstrMessageEvent) -> str | None:
     return None
 
 
+def get_first_at_user(event: AstrMessageEvent) -> str | None:
+    """获取消息中第一个被at的用户ID（包括机器人）
+
+    Args:
+        event: 消息事件
+
+    Returns:
+        目标用户ID，如果没有则返回None
+    """
+    msg_obj = getattr(event, "message_obj", None)
+    if not msg_obj:
+        return None
+
+    chain = getattr(msg_obj, "message", None) or []
+
+    for component in chain:
+        if isinstance(component, At):
+            return str(component.qq)
+    return None
+
+
 def is_group_allowed(group_id: str, enabled_groups: list) -> bool:
     """检查群是否允许使用插件功能
 
