@@ -1,5 +1,45 @@
 # Changelog
 
+## v2.4.0 (2026-03-29)
+
+### 重构
+- **数据库迁移**: 从YAML迁移到SQLite数据库
+  - 新增 `core/database.py` 模块，提供完整的数据库操作支持
+  - 用户财富数据、雇员关系现在存储在SQLite数据库中
+  - 支持群组隔离，所有数据按 group_id 隔离存储
+  - 保留YAML用于购买次数配置存储
+  - 初始化时自动检查并迁移旧YAML数据到数据库
+
+- **数据管理器重构**: 重构 `core/data_manager.py`
+  - 导入并使用 QsignDatabase 进行数据持久化
+  - `get_user_data` 方法改为异步，从数据库查询用户数据
+  - `save_user_data` 方法改为异步，保存数据到数据库
+  - 新增 `add_contractor`, `remove_contractor`, `clear_contractors` 方法操作雇员关系
+  - 新增 `get_leaderboard` 方法从数据库获取排行榜
+  - 新增 `close` 方法关闭数据库连接
+
+- **财富系统重构**: 重构 `core/wealth_system.py`
+  - 所有方法改为异步支持
+  - `calculate_dynamic_wealth_value` 方法现在接收 group_id 参数
+  - `get_total_contractor_rate` 方法现在接收 group_id 参数
+  - `calculate_sign_income` 和 `calculate_tomorrow_income` 方法现在接收 group_id 参数
+  - 所有数据库操作都使用 group_id 进行群组隔离
+
+- **主程序重构**: 重构 `main.py`
+  - 更新所有指令处理方法，使用 `await` 调用异步方法
+  - 购买/出售逻辑使用新的数据库操作方法
+  - 签到逻辑使用新的数据库操作方法
+  - 排行榜查询使用数据库方法 `get_leaderboard`
+  - `terminate` 方法现在关闭数据库连接
+  - 所有用户数据操作都使用 group_id
+
+- **卡片渲染器更新**: 更新 `services/card_renderer.py`
+  - 适配异步数据管理器调用
+  - `prepare_render_data` 方法现在使用 `await` 获取用户数据
+
+### 新增
+- **依赖项**: 添加 `aiosqlite` 依赖用于异步SQLite操作
+
 ## v2.3.0 (2026-03-29)
 
 ### 新增

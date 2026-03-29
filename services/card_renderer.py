@@ -98,7 +98,7 @@ class CardRenderer:
         """
         group_id = str(event.message_obj.group_id)
         user_id = str(event.get_sender_id())
-        user_data = self.data_manager.get_user_data(group_id, user_id)
+        user_data = await self.data_manager.get_user_data(group_id, user_id)
 
         # 获取头像和背景图
         avatar_data = await self.image_cache.get_avatar(user_id)
@@ -139,13 +139,11 @@ class CardRenderer:
 
         if is_query:
             # 查询模式：计算明日预计收入
-            income_info = self.wealth_system.calculate_tomorrow_income(
+            income_info = await self.wealth_system.calculate_tomorrow_income(
                 user_data, group_id
             )
 
             # 获取雇员名称列表
-            from astrbot.api import logger as astr_logger
-
             contractor_names = []
             for uid in user_data["contractors"]:
                 name = await self._get_user_name_from_platform(event, uid)

@@ -56,10 +56,13 @@ class WealthSystem:
                 return name, rate
         return "平民", 0.25
 
-    def calculate_dynamic_wealth_value(self, user_data: dict, user_id: str) -> float:
+    async def calculate_dynamic_wealth_value(
+        self, group_id: str, user_data: dict, user_id: str
+    ) -> float:
         """计算动态身价
 
         Args:
+            group_id: 群ID
             user_data: 用户数据
             user_id: 用户ID
 
@@ -76,7 +79,9 @@ class WealthSystem:
         price_bonus = self.config.get("contract_level_price_bonus", 0.15)
         return base_value * (1 + contract_level * price_bonus)
 
-    def get_total_contractor_rate(self, group_id: str, contractor_ids: list) -> float:
+    async def get_total_contractor_rate(
+        self, group_id: str, contractor_ids: list
+    ) -> float:
         """计算雇员总加成率
 
         Args:
@@ -89,13 +94,15 @@ class WealthSystem:
         total_rate = 0.0
         rate_bonus = self.config.get("contract_level_rate_bonus", 0.075)
         for contractor_id in contractor_ids:
-            contractor_data = self.data_manager.get_user_data(group_id, contractor_id)
+            contractor_data = await self.data_manager.get_user_data(
+                group_id, contractor_id
+            )
             _, base_rate = self.get_wealth_info(contractor_data)
             contract_level = self.data_manager.get_purchase_count(contractor_id)
             total_rate += base_rate + (contract_level * rate_bonus)
         return total_rate
 
-    def calculate_sign_income(
+    async def calculate_sign_income(
         self,
         user_data: dict,
         group_id: str,
@@ -112,7 +119,7 @@ class WealthSystem:
             (最终收益, 原始收益, 基础收益, 雇员加成, 连续签到加成, 银行利息)
         """
         _, user_base_rate = self.get_wealth_info(user_data)
-        contractor_dynamic_rates = self.get_total_contractor_rate(
+        contractor_dynamic_rates = await self.get_total_contractor_rate(
             group_id, user_data["contractors"]
         )
 
@@ -138,7 +145,9 @@ class WealthSystem:
             interest,
         )
 
-    def calculate_tomorrow_income(self, user_data: dict, group_id: str) -> dict:
+    async def calculate_tomorrow_income(
+        self, user_data: dict, group_id: str
+    ) -> dict:
         """计算明日预计收入
 
         Args:
@@ -150,7 +159,7 @@ class WealthSystem:
         """
         _, user_base_rate = self.get_wealth_info(user_data)
         base_with_bonus = BASE_INCOME * (1 + user_base_rate)
-        contractor_dynamic_rates = self.get_total_contractor_rate(
+        contractor_dynamic_rates = await self.get_total_contractor_rate(
             group_id, user_data["contractors"]
         )
         contract_bonus = base_with_bonus * contractor_dynamic_rates

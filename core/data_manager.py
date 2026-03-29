@@ -2,7 +2,7 @@
 数据管理模块
 
 提供用户数据的读写、缓存管理等功能。
-数据存储使用YAML格式，存储在 data/astrbot_plugin_Qsign/ 目录下。
+使用SQLite数据库存储用户财富数据和雇员关系，使用YAML存储购买次数配置。
 """
 
 import os
@@ -12,11 +12,14 @@ import aiofiles
 import yaml
 from astrbot.api import logger
 
+from .database import QsignDatabase
+
 
 class DataManager:
     """数据管理器
 
     管理用户签到数据、购买记录等数据的读写和缓存。
+    用户财富数据和雇员关系存储在SQLite数据库中，购买次数存储在YAML中。
     """
 
     def __init__(self, plugin_dir: str):
@@ -33,23 +36,36 @@ class DataManager:
         self.sign_data: dict = {}
         self.purchase_data: dict = {}
 
+        # Initialize database
+        self.db = QsignDatabase()
+
         self._init_env()
 
     def _init_env(self):
         """初始化数据目录"""
         os.makedirs(self.data_dir, exist_ok=True)
-        if not os.path.exists(self.data_file):
-            with open(self.data_file, "w", encoding="utf-8") as f:
-                yaml.dump({}, f)
         if not os.path.exists(self.purchase_data_file):
             with open(self.purchase_data_file, "w", encoding="utf-8") as f:
                 yaml.dump({}, f)
 
-    async def load_all_data(self):
-        """加载所有数据到缓存"""
-        self.sign_data = await self._load_yaml_async(self.data_file)
+    async def init(self):
+        """异步初始化数据库连接并迁移数据"""
+        await self.db.init()
+
+        # Load purchase data from YAML
         self.purchase_data = await self._load_yaml_async(self.purchase_data_file)
-        logger.info("签到插件数据已加载到缓存。")
+
+        # Check if there's old YAML data to migrate
+        if os.path.exists(self.data_file):
+            yaml_data = await self._load_yaml_async(self.data_file)
+            if yaml_data:
+                user_count, contractor_count = await self.db.migrate_from_yaml(yaml_data)
+                if user_count > 0:
+                    logger.info(f"已从YAML迁移 {user_count} 个用户数据到数据库")
+                # Rename old file to prevent re-migration
+                backup_file = self.data_file + ".backup"
+                os.rename(self.data_file, backup_file)
+                logger.info(f"原YAML数据已备份到: {backup_file}")
 
     async def _load_yaml_async(self, file_path: str) -> dict:
         """异步加载YAML文件
@@ -84,15 +100,11 @@ class DataManager:
         except Exception as e:
             logger.error(f"异步保存YAML文件失败 ({file_path}): {e}")
 
-    async def save_sign_data(self):
-        """保存签到数据"""
-        await self._save_yaml_async(self.sign_data, self.data_file)
-
     async def save_purchase_data(self):
         """保存购买记录数据"""
         await self._save_yaml_async(self.purchase_data, self.purchase_data_file)
 
-    def get_user_data(self, group_id: str, user_id: str) -> dict:
+    async def get_user_data(self, group_id: str, user_id: str) -> dict:
         """获取用户数据
 
         Args:
@@ -102,17 +114,80 @@ class DataManager:
         Returns:
             用户数据字典
         """
-        return self.sign_data.setdefault(str(group_id), {}).setdefault(
-            str(user_id),
+        db_data = await self.db.get_user_data(group_id, user_id)
+
+        # Get contractors and owner info from database
+        contractors = await self.db.get_contractors(group_id, user_id)
+        owner_id = await self.db.get_owner(group_id, user_id)
+
+        return {
+            "coins": db_data.get("coins", 0.0),
+            "bank": db_data.get("bank", 0.0),
+            "contractors": contractors,
+            "contracted_by": owner_id,
+            "last_sign": db_data.get("last_sign", ""),
+            "consecutive": db_data.get("consecutive", 0),
+        }
+
+    async def save_user_data(self, group_id: str, user_id: str, user_data: dict):
+        """保存用户数据到数据库
+
+        Args:
+            group_id: 群ID
+            user_id: 用户ID
+            user_data: 用户数据字典
+        """
+        await self.db.update_user_data(
+            group_id,
+            user_id,
             {
-                "coins": 0.0,
-                "bank": 0.0,
-                "contractors": [],
-                "contracted_by": None,
-                "last_sign": None,
-                "consecutive": 0,
+                "coins": user_data.get("coins", 0.0),
+                "bank": user_data.get("bank", 0.0),
+                "last_sign": user_data.get("last_sign", ""),
+                "consecutive": user_data.get("consecutive", 0),
             },
         )
+
+    async def add_contractor(self, group_id: str, owner_id: str, contractor_id: str):
+        """添加雇员关系
+
+        Args:
+            group_id: 群ID
+            owner_id: 雇主ID
+            contractor_id: 雇员ID
+        """
+        await self.db.add_contractor(group_id, owner_id, contractor_id)
+
+    async def remove_contractor(self, group_id: str, owner_id: str, contractor_id: str):
+        """移除雇员关系
+
+        Args:
+            group_id: 群ID
+            owner_id: 雇主ID
+            contractor_id: 雇员ID
+        """
+        await self.db.remove_contractor(group_id, owner_id, contractor_id)
+
+    async def clear_contractors(self, group_id: str, owner_id: str):
+        """清空雇主的所有雇员
+
+        Args:
+            group_id: 群ID
+            owner_id: 雇主ID
+        """
+        await self.db.clear_contractors(group_id, owner_id)
+
+    async def get_leaderboard(self, group_id: str, limit: int = 10) -> list[tuple[str, float]]:
+        """获取财富排行榜
+
+        Args:
+            group_id: 群ID
+            limit: 返回数量限制
+
+        Returns:
+            (用户ID, 总资产) 元组列表
+        """
+        return await self.db.get_leaderboard(group_id, limit)
 
     def get_purchase_count(self, user_id: str) -> int:
         """获取用户被购买次数
@@ -132,3 +207,7 @@ class DataManager:
             user_id: 用户ID
         """
         self.purchase_data[str(user_id)] = self.purchase_data.get(str(user_id), 0) + 1
+
+    async def close(self):
+        """关闭数据库连接"""
+        await self.db.close()

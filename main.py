@@ -19,10 +19,10 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
 
 
 @register(
-    "astrbot_plugin_sign",
+    "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.3.0",
+    "2.4.0",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -42,7 +42,7 @@ class ContractSystem(Star):
         )
 
         # Load data to cache
-        asyncio.create_task(self.data_manager.load_all_data())
+        asyncio.create_task(self.data_manager.init())
 
     async def _is_user_admin(self, event: AstrMessageEvent, user_id: str) -> bool:
         """检查用户是否为群主或管理员
@@ -103,15 +103,15 @@ class ContractSystem(Star):
             )
             return
 
-        employer_data = self.data_manager.get_user_data(group_id, user_id)
-        target_data = self.data_manager.get_user_data(group_id, target_id)
+        employer_data = await self.data_manager.get_user_data(group_id, user_id)
+        target_data = await self.data_manager.get_user_data(group_id, target_id)
 
         if len(employer_data["contractors"]) >= 3:
             yield event.plain_result("已达到最大雇佣数量（3人）。")
             return
 
-        base_cost = self.wealth_system.calculate_dynamic_wealth_value(
-            target_data, target_id
+        base_cost = await self.wealth_system.calculate_dynamic_wealth_value(
+            group_id, target_data, target_id
         )
         total_cost = base_cost
         original_owner_id = target_data.get("contracted_by")
@@ -132,21 +132,27 @@ class ContractSystem(Star):
                 )
                 return
 
-            original_owner_data = self.data_manager.get_user_data(
+            original_owner_data = await self.data_manager.get_user_data(
                 group_id, original_owner_id
             )
-            if target_id in original_owner_data["contractors"]:
-                original_owner_data["contractors"].remove(target_id)
 
-            original_owner_data["coins"] += compensation
+            # Update coins
             employer_data["coins"] -= total_cost
+            original_owner_data["coins"] += compensation
 
-            employer_data["contractors"].append(target_id)
-            target_data["contracted_by"] = user_id
+            # Update contractor relationships in database
+            await self.data_manager.remove_contractor(
+                group_id, original_owner_id, target_id
+            )
+            await self.data_manager.add_contractor(group_id, user_id, target_id)
+
+            # Save user data
+            await self.data_manager.save_user_data(group_id, user_id, employer_data)
+            await self.data_manager.save_user_data(
+                group_id, original_owner_id, original_owner_data
+            )
 
             self.data_manager.increment_purchase_count(target_id)
-
-            await self.data_manager.save_sign_data()
             await self.data_manager.save_purchase_data()
 
             target_name = await self._get_user_name_from_platform(event, target_id)
@@ -166,11 +172,14 @@ class ContractSystem(Star):
             return
 
         employer_data["coins"] -= total_cost
-        employer_data["contractors"].append(target_id)
-        target_data["contracted_by"] = user_id
+
+        # Update contractor relationship in database
+        await self.data_manager.add_contractor(group_id, user_id, target_id)
+
+        # Save user data
+        await self.data_manager.save_user_data(group_id, user_id, employer_data)
 
         self.data_manager.increment_purchase_count(target_id)
-        await self.data_manager.save_sign_data()
         await self.data_manager.save_purchase_data()
 
         target_name = await self._get_user_name_from_platform(event, target_id)
@@ -193,21 +202,29 @@ class ContractSystem(Star):
 
         user_id = str(event.get_sender_id())
 
-        employer_data = self.data_manager.get_user_data(group_id, user_id)
-        target_data = self.data_manager.get_user_data(group_id, target_id)
+        employer_data = await self.data_manager.get_user_data(group_id, user_id)
+        target_data = await self.data_manager.get_user_data(group_id, target_id)
+
         if target_id not in employer_data["contractors"]:
             yield event.plain_result("该用户不在你的雇员列表中。")
             return
 
         sell_rate = self.config.get("sell_return_rate", 0.8)
         sell_price = (
-            self.wealth_system.calculate_dynamic_wealth_value(target_data, target_id)
+            await self.wealth_system.calculate_dynamic_wealth_value(
+                group_id, target_data, target_id
+            )
             * sell_rate
         )
+
         employer_data["coins"] += sell_price
-        employer_data["contractors"].remove(target_id)
-        target_data["contracted_by"] = None
-        await self.data_manager.save_sign_data()
+
+        # Update contractor relationship in database
+        await self.data_manager.remove_contractor(group_id, user_id, target_id)
+
+        # Save user data
+        await self.data_manager.save_user_data(group_id, user_id, employer_data)
+
         target_name = await self._get_user_name_from_platform(event, target_id)
         yield event.plain_result(
             f"成功解雇 {target_name}，获得补偿金{sell_price:.1f}金币。"
@@ -223,9 +240,11 @@ class ContractSystem(Star):
             return
 
         user_id = str(event.get_sender_id())
-        user_data = self.data_manager.get_user_data(group_id, user_id)
+        user_data = await self.data_manager.get_user_data(group_id, user_id)
+
         now = datetime.now(SHANGHAI_TZ)
         today = now.date()
+
         if user_data["last_sign"]:
             last_sign_dt = datetime.fromisoformat(user_data["last_sign"])
             last_sign_aware = SHANGHAI_TZ.localize(last_sign_dt)
@@ -251,11 +270,15 @@ class ContractSystem(Star):
             _,
             _,
             _,
-        ) = self.wealth_system.calculate_sign_income(user_data, group_id, is_penalized)
+        ) = await self.wealth_system.calculate_sign_income(
+            user_data, group_id, is_penalized
+        )
 
         user_data["coins"] += earned
         user_data["last_sign"] = now.replace(tzinfo=None).isoformat()
-        await self.data_manager.save_sign_data()
+
+        # Save user data to database
+        await self.data_manager.save_user_data(group_id, user_id, user_data)
 
         # Generate card
         bg_api_url = self.config.get("bg_api_url", "https://t.alcy.cc/ycy")
@@ -287,19 +310,13 @@ class ContractSystem(Star):
         if not is_group_allowed(group_id, self.config.get("enabled_groups", [])):
             return
 
-        group_data = self.data_manager.sign_data.get(group_id)
-        if not group_data:
-            yield event.plain_result("本群暂无签到数据，无法生成排行榜。")
-            return
-        all_users_wealth = []
-        for user_id, user_data in group_data.items():
-            total_wealth = user_data.get("coins", 0.0) + user_data.get("bank", 0.0)
-            all_users_wealth.append((user_id, total_wealth))
-        sorted_users = sorted(all_users_wealth, key=lambda item: item[1], reverse=True)
-        top_10_users = sorted_users[:10]
+        # Get leaderboard from database
+        top_10_users = await self.data_manager.get_leaderboard(group_id, limit=10)
+
         if not top_10_users:
             yield event.plain_result("本群暂无签到数据，无法生成排行榜。")
             return
+
         user_ids_to_fetch = [user[0] for user in top_10_users]
         name_coroutines = [
             self._get_user_name_from_platform(event, uid) for uid in user_ids_to_fetch
@@ -324,29 +341,37 @@ class ContractSystem(Star):
             return
 
         user_id = str(event.get_sender_id())
-        user_data = self.data_manager.get_user_data(group_id, user_id)
+        user_data = await self.data_manager.get_user_data(group_id, user_id)
+
         if not user_data["contracted_by"]:
             yield event.plain_result("您是自由身，无需赎身。")
             return
 
-        cost = self.wealth_system.calculate_dynamic_wealth_value(user_data, user_id)
+        cost = await self.wealth_system.calculate_dynamic_wealth_value(
+            group_id, user_data, user_id
+        )
+
         if user_data["coins"] < cost:
             yield event.plain_result(f"金币不足，需要支付赎身费用：{cost:.1f}金币。")
             return
 
         employer_id = user_data["contracted_by"]
-        employer_data = self.data_manager.get_user_data(group_id, employer_id)
+        employer_data = await self.data_manager.get_user_data(group_id, employer_id)
 
         user_data["coins"] -= cost
-        if user_id in employer_data["contractors"]:
-            employer_data["contractors"].remove(user_id)
-        user_data["contracted_by"] = None
+
+        # Update contractor relationship in database
+        await self.data_manager.remove_contractor(group_id, employer_id, user_id)
+
+        # Save user data
+        await self.data_manager.save_user_data(group_id, user_id, user_data)
 
         redeem_rate = self.config.get("redeem_return_rate", 0.5)
         compensation = cost * redeem_rate
         employer_data["coins"] += compensation
 
-        await self.data_manager.save_sign_data()
+        # Save employer data
+        await self.data_manager.save_user_data(group_id, employer_id, employer_data)
 
         employer_name = await self._get_user_name_from_platform(event, employer_id)
         yield event.plain_result(
@@ -397,14 +422,20 @@ class ContractSystem(Star):
         except ValueError:
             yield event.plain_result("金额格式不正确，请使用：存款 <数字>")
             return
+
         user_id = str(event.get_sender_id())
-        user_data = self.data_manager.get_user_data(group_id, user_id)
+        user_data = await self.data_manager.get_user_data(group_id, user_id)
+
         if amount > user_data["coins"]:
             yield event.plain_result(f"现金不足，当前现金：{user_data['coins']:.1f}")
             return
+
         user_data["coins"] -= amount
         user_data["bank"] += amount
-        await self.data_manager.save_sign_data()
+
+        # Save user data to database
+        await self.data_manager.save_user_data(group_id, user_id, user_data)
+
         yield event.plain_result(f"成功存入 {amount:.1f} 金币到银行。")
 
     @filter.regex(r"^(取款|取钱)\s+([0-9.]+)$")
@@ -424,18 +455,26 @@ class ContractSystem(Star):
         except ValueError:
             yield event.plain_result("金额格式不正确，请使用：取款 <数字>")
             return
+
         user_id = str(event.get_sender_id())
-        user_data = self.data_manager.get_user_data(group_id, user_id)
+        user_data = await self.data_manager.get_user_data(group_id, user_id)
+
         if amount > user_data["bank"]:
             yield event.plain_result(f"银行存款不足，当前存款：{user_data['bank']:.1f}")
             return
+
         user_data["bank"] -= amount
         user_data["coins"] += amount
-        await self.data_manager.save_sign_data()
+
+        # Save user data to database
+        await self.data_manager.save_user_data(group_id, user_id, user_data)
+
         yield event.plain_result(f"成功取出 {amount:.1f} 金币。")
 
     async def terminate(self):
+        """插件终止时关闭资源"""
         await self.image_cache.close()
+        await self.data_manager.close()
 
     async def _get_user_name_from_platform(
         self, event: AstrMessageEvent, target_id: str
