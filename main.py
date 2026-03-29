@@ -44,15 +44,15 @@ class ContractSystem(Star):
         # Load data to cache
         asyncio.create_task(self.data_manager.init())
 
-    async def _is_user_admin(self, event: AstrMessageEvent, user_id: str) -> bool:
-        """检查用户是否为群主或管理员
+    async def _get_user_role(self, event: AstrMessageEvent, user_id: str) -> str:
+        """获取用户在群中的角色
 
         Args:
             event: 消息事件
             user_id: 用户ID
 
         Returns:
-            是否为群主或管理员
+            角色: "owner"(群主), "admin"(管理员), "member"(普通成员)
         """
         if event.get_platform_name() == "aiocqhttp":
             try:
@@ -68,11 +68,23 @@ class ContractSystem(Star):
                         user_id=int(user_id),
                         no_cache=True,
                     )
-                    role = resp.get("role", "member")
-                    return role in ["owner", "admin"]
+                    return resp.get("role", "member")
             except Exception as e:
-                logger.warning(f"检查用户权限失败({user_id}): {e}")
-        return False
+                logger.warning(f"获取用户角色失败({user_id}): {e}")
+        return "member"
+
+    async def _is_user_admin(self, event: AstrMessageEvent, user_id: str) -> bool:
+        """检查用户是否为群主或管理员
+
+        Args:
+            event: 消息事件
+            user_id: 用户ID
+
+        Returns:
+            是否为群主或管理员
+        """
+        role = await self._get_user_role(event, user_id)
+        return role in ["owner", "admin"]
 
     @filter.regex(r"^购买")
     async def purchase(self, event: AstrMessageEvent):
@@ -96,15 +108,18 @@ class ContractSystem(Star):
             yield event.plain_result("您不能购买自己。")
             return
 
-        # 检查目标用户是否为群主/管理员
-        if await self._is_user_admin(event, target_id):
-            admin_config = self.config.get("admin", {})
-            admin_bonus = admin_config.get("admin_price_bonus", 0.5)
-            yield event.plain_result(
-                f"无法购买群主或管理员！管理员身价加成 {admin_bonus * 100}%，不可被购买。"
-            )
-            return
+        # 检查目标用户角色
+        target_role = await self._get_user_role(event, target_id)
+        admin_config = self.config.get("admin", {})
 
+        # 群主默认不可被购买（除非配置允许）
+        if target_role == "owner":
+            owner_can_be_purchased = admin_config.get("owner_can_be_purchased", False)
+            if not owner_can_be_purchased:
+                yield event.plain_result("群主不可被购买！")
+                return
+
+        # 获取基础身价
         employer_data = await self.data_manager.get_user_data(group_id, user_id)
         target_data = await self.data_manager.get_user_data(group_id, target_id)
 
@@ -115,6 +130,12 @@ class ContractSystem(Star):
         base_cost = await self.wealth_system.calculate_dynamic_wealth_value(
             group_id, target_data, target_id
         )
+
+        # 管理员和群主享受价格加成
+        if target_role in ["owner", "admin"]:
+            admin_bonus = admin_config.get("admin_price_bonus", 0.5)
+            base_cost *= (1 + admin_bonus)
+
         total_cost = base_cost
         original_owner_id = target_data.get("contracted_by")
 

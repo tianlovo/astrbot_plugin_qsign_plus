@@ -77,7 +77,13 @@
         "type": "float",
         "description": "管理员价格加成比例",
         "default": 0.5,
-        "hint": "例如，0.5代表管理员身价加成50%，且不可被购买。"
+        "hint": "例如，0.5代表管理员身价加成50%，管理员可被购买但价格更高。"
+      },
+      "owner_can_be_purchased": {
+        "type": "bool",
+        "description": "群主是否可被购买",
+        "default": false,
+        "hint": "关闭时群主不可被购买，开启时群主可被购买（仍享受价格加成）。"
       }
     }
   }
