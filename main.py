@@ -444,7 +444,7 @@ class ContractSystem(Star):
             yield event.plain_result("查询失败，图片生成服务出现问题。")
 
     @filter.regex(r"^(存款|存钱)\s+([0-9.]+)$")
-    async def deposit(self, event: AstrMessageEvent, amount_str: str):
+    async def deposit(self, event: AstrMessageEvent):
         if not is_at_bot(event):
             return
 
@@ -453,8 +453,15 @@ class ContractSystem(Star):
         if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
             return
 
+        # Parse amount from message
+        message_str = event.message_str
+        match = __import__("re").match(r"^(存款|存钱)\s+([0-9.]+)$", message_str)
+        if not match:
+            yield event.plain_result("金额格式不正确，请使用：存款 <数字>")
+            return
+
         try:
-            amount = float(amount_str)
+            amount = float(match.group(2))
             if amount <= 0:
                 yield event.plain_result("存款金额必须大于0。")
                 return
@@ -478,7 +485,7 @@ class ContractSystem(Star):
         yield event.plain_result(f"成功存入 {amount:.1f} 金币到银行。")
 
     @filter.regex(r"^(取款|取钱)\s+([0-9.]+)$")
-    async def withdraw(self, event: AstrMessageEvent, amount_str: str):
+    async def withdraw(self, event: AstrMessageEvent):
         if not is_at_bot(event):
             return
 
@@ -487,8 +494,15 @@ class ContractSystem(Star):
         if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
             return
 
+        # Parse amount from message
+        message_str = event.message_str
+        match = __import__("re").match(r"^(取款|取钱)\s+([0-9.]+)$", message_str)
+        if not match:
+            yield event.plain_result("金额格式不正确，请使用：取款 <数字>")
+            return
+
         try:
-            amount = float(amount_str)
+            amount = float(match.group(2))
             if amount <= 0:
                 yield event.plain_result("取款金额必须大于0。")
                 return
