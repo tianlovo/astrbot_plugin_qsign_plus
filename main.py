@@ -29,7 +29,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.9.0",
+    "2.10.0",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -53,6 +53,22 @@ class ContractSystem(Star):
 
         # Load data to cache
         asyncio.create_task(self.data_manager.init())
+
+        # 同步兑换码配置到数据库
+        asyncio.create_task(self._sync_redeem_codes())
+
+    async def _sync_redeem_codes(self):
+        """同步兑换码配置到数据库"""
+        try:
+            # 等待数据库初始化完成
+            while not self.data_manager.is_db_initialized():
+                await asyncio.sleep(0.5)
+
+            redeem_config = self.config.get("redeem_codes", {})
+            redeem_codes = redeem_config.get("redeem_code", [])
+            await self.data_manager.sync_redeem_codes_from_config(redeem_codes)
+        except Exception as e:
+            logger.error(f"同步兑换码配置失败: {e}")
 
     def _get_currency_name(self) -> str:
         """获取货币名称
@@ -877,6 +893,153 @@ class ContractSystem(Star):
         # 发送奖励消息（简化版，仅提示获得的用户和金额）
         reward_msg = f"🎉 {user_name} 获得了随机掉落的 {reward_amount:.1f} {currency}！"
         await send_text_reply(event, reward_msg)
+
+    @filter.regex(r"^兑换\s*(.+)$")
+    async def redeem(self, event: AstrMessageEvent):
+        if not is_at_bot(event):
+            return
+
+        group_id = str(event.message_obj.group_id)
+        basic_config = self.config.get("basic", {})
+        if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
+            return
+
+        # 解析兑换码
+        message_str = event.message_str
+        match = __import__("re").match(r"^兑换\s*(.+)$", message_str)
+        if not match:
+            await send_text_reply(event, "兑换码格式不正确，请使用：兑换 <兑换码>")
+            return
+
+        code = match.group(1).strip()
+        if not code:
+            await send_text_reply(event, "请输入兑换码。")
+            return
+
+        user_id = str(event.get_sender_id())
+
+        # 使用兑换码
+        success, message, reward_amount = await self.data_manager.use_redeem_code(
+            group_id, user_id, code
+        )
+
+        currency = self._get_currency_name()
+        if success:
+            await send_text_reply(
+                event,
+                f"🎉 兑换成功！您获得了 {reward_amount:.1f} {currency}！"
+            )
+        else:
+            await send_text_reply(event, f"❌ {message}")
+
+    @filter.regex(r"^兑换码列表$")
+    async def redeem_code_list(self, event: AstrMessageEvent):
+        if not is_at_bot(event):
+            return
+
+        group_id = str(event.message_obj.group_id)
+        basic_config = self.config.get("basic", {})
+        if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
+            return
+
+        # 检查是否为管理员
+        user_id = str(event.get_sender_id())
+        if not await self._is_user_admin(event, user_id):
+            await send_text_reply(event, "只有管理员才能查看兑换码列表。")
+            return
+
+        # 获取所有兑换码
+        redeem_codes = await self.data_manager.get_all_redeem_codes()
+
+        if not redeem_codes:
+            await send_text_reply(event, "暂无兑换码。")
+            return
+
+        currency = self._get_currency_name()
+        result = "【兑换码列表】\n" + "-" * 20 + "\n"
+
+        for code_info in redeem_codes:
+            code = code_info["code"]
+            desc = code_info.get("description", "")
+            reward = code_info.get("reward_amount", 0)
+            is_expired = code_info.get("is_expired", False)
+            expire_time = code_info.get("expire_time", "")
+            max_uses = code_info.get("max_uses", 0)
+            used_count = code_info.get("used_count", 0)
+
+            status = "已过期" if is_expired else "有效"
+            if expire_time:
+                status += f" (到期: {expire_time})"
+
+            uses_str = f"{used_count}/{max_uses}" if max_uses > 0 else f"{used_count}/∞"
+
+            result += f"🎫 {code}\n"
+            if desc:
+                result += f"   描述: {desc}\n"
+            result += f"   奖励: {reward:.1f} {currency}\n"
+            result += f"   状态: {status}\n"
+            result += f"   使用: {uses_str}\n\n"
+
+        await send_text_reply(event, result.strip())
+
+    @filter.regex(r"^兑换记录\s*(.+)$")
+    async def redeem_records(self, event: AstrMessageEvent):
+        if not is_at_bot(event):
+            return
+
+        group_id = str(event.message_obj.group_id)
+        basic_config = self.config.get("basic", {})
+        if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
+            return
+
+        # 检查是否为管理员
+        user_id = str(event.get_sender_id())
+        if not await self._is_user_admin(event, user_id):
+            await send_text_reply(event, "只有管理员才能查看兑换记录。")
+            return
+
+        # 解析兑换码
+        message_str = event.message_str
+        match = __import__("re").match(r"^兑换记录\s*(.+)$", message_str)
+        if not match:
+            await send_text_reply(event, "格式不正确，请使用：兑换记录 <兑换码>")
+            return
+
+        code = match.group(1).strip()
+        if not code:
+            await send_text_reply(event, "请输入兑换码。")
+            return
+
+        # 获取兑换记录
+        records = await self.data_manager.get_redeem_records_by_code(code)
+
+        if not records:
+            await send_text_reply(event, f"兑换码 '{code}' 暂无兑换记录。")
+            return
+
+        from datetime import datetime
+
+        currency = self._get_currency_name()
+        result = f"【兑换记录 - {code}】\n" + "-" * 20 + "\n"
+        result += f"共 {len(records)} 条记录\n\n"
+
+        for record in records[:20]:  # 只显示前20条
+            user_id = record["user_id"]
+            reward = record["reward_amount"]
+            redeemed_at = record["redeemed_at"]
+
+            # 转换时间戳
+            dt = datetime.fromtimestamp(redeemed_at)
+            time_str = dt.strftime("%Y-%m-%d %H:%M:%S")
+
+            result += f"👤 用户: {user_id[-4:]}\n"
+            result += f"   奖励: {reward:.1f} {currency}\n"
+            result += f"   时间: {time_str}\n\n"
+
+        if len(records) > 20:
+            result += f"... 还有 {len(records) - 20} 条记录"
+
+        await send_text_reply(event, result.strip())
 
     async def terminate(self):
         """插件终止时关闭资源"""

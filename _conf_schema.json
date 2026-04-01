@@ -141,5 +141,60 @@
         "hint": "用于每日奖励次数重置的时区。常用时区：Asia/Shanghai（中国）、Asia/Tokyo（日本）、America/New_York（美国东部）、Europe/London（伦敦）。"
       }
     }
+  },
+  "redeem_codes": {
+    "description": "兑换码配置",
+    "type": "template_list",
+    "hint": "配置多个兑换码，每个兑换码可设置奖励数量、过期时间、使用次数限制等",
+    "templates": {
+      "redeem_code": {
+        "name": "兑换码",
+        "hint": "用户输入兑换码可获得对应奖励",
+        "items": {
+          "code": {
+            "type": "string",
+            "description": "兑换码",
+            "default": "",
+            "hint": "兑换码字符串，用户输入此代码进行兑换。建议设置复杂一些的代码防止被猜测。"
+          },
+          "description": {
+            "type": "string",
+            "description": "兑换码描述",
+            "default": "",
+            "hint": "兑换码的说明文字，如'新春活动奖励'、'推广码'等。"
+          },
+          "reward_amount": {
+            "type": "float",
+            "description": "奖励数量",
+            "default": 100.0,
+            "hint": "兑换成功后用户获得的货币数量。"
+          },
+          "is_expired": {
+            "type": "bool",
+            "description": "是否已过期",
+            "default": false,
+            "hint": "手动设置兑换码是否过期。开启后该兑换码将无法使用。"
+          },
+          "expire_time": {
+            "type": "string",
+            "description": "过期时间",
+            "default": "",
+            "hint": "兑换码过期时间，格式：YYYY-MM-DD HH:MM。留空表示永不过期。"
+          },
+          "max_uses": {
+            "type": "int",
+            "description": "最大使用次数",
+            "default": 0,
+            "hint": "兑换码最多可被使用多少次。0表示无限制。"
+          },
+          "enabled_groups": {
+            "type": "list",
+            "description": "允许使用的群列表",
+            "default": [],
+            "hint": "只有在列表中的群才能使用该兑换码，为空则允许所有群。"
+          }
+        }
+      }
+    }
   }
 }

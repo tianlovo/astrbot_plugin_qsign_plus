@@ -144,6 +144,36 @@ class QsignDatabase:
                 )
             """)
 
+            # 创建兑换码表
+            await self._conn.execute("""
+                CREATE TABLE IF NOT EXISTS redeem_codes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    code TEXT NOT NULL UNIQUE,
+                    description TEXT DEFAULT '',
+                    reward_amount REAL DEFAULT 0.0,
+                    is_expired INTEGER DEFAULT 0,
+                    expire_time TEXT DEFAULT '',
+                    max_uses INTEGER DEFAULT 0,
+                    used_count INTEGER DEFAULT 0,
+                    enabled_groups TEXT DEFAULT '',
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL
+                )
+            """)
+
+            # 创建用户兑换记录表
+            await self._conn.execute("""
+                CREATE TABLE IF NOT EXISTS user_redeem_records (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    group_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    code TEXT NOT NULL,
+                    reward_amount REAL DEFAULT 0.0,
+                    redeemed_at INTEGER NOT NULL,
+                    UNIQUE(group_id, user_id, code)
+                )
+            """)
+
             # 创建索引
             await self._conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_user_wealth_group
@@ -160,6 +190,14 @@ class QsignDatabase:
             await self._conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_contractors_contractor
                 ON user_contractors(group_id, contractor_id)
+            """)
+            await self._conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_redeem_records_user
+                ON user_redeem_records(group_id, user_id)
+            """)
+            await self._conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_redeem_records_code
+                ON user_redeem_records(code)
             """)
 
             await self._conn.commit()
@@ -739,6 +777,277 @@ class QsignDatabase:
         except Exception as e:
             logger.error(f"[{self.plugin_name}] 获取at奖励总金额失败: {e}")
             return 0.0
+
+    async def get_redeem_code(self, code: str) -> dict[str, Any] | None:
+        """获取兑换码信息
+
+        Args:
+            code: 兑换码
+
+        Returns:
+            兑换码信息字典，如果不存在则返回 None
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            async with self._conn.execute(
+                "SELECT * FROM redeem_codes WHERE code = ?",
+                (str(code),),
+            ) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    return {
+                        "id": row["id"],
+                        "code": row["code"],
+                        "description": row["description"],
+                        "reward_amount": row["reward_amount"],
+                        "is_expired": bool(row["is_expired"]),
+                        "expire_time": row["expire_time"],
+                        "max_uses": row["max_uses"],
+                        "used_count": row["used_count"],
+                        "enabled_groups": row["enabled_groups"],
+                        "created_at": row["created_at"],
+                        "updated_at": row["updated_at"],
+                    }
+                return None
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 获取兑换码信息失败: {e}")
+            return None
+
+    async def save_redeem_code(
+        self,
+        code: str,
+        description: str = "",
+        reward_amount: float = 0.0,
+        is_expired: bool = False,
+        expire_time: str = "",
+        max_uses: int = 0,
+        enabled_groups: str = "",
+    ) -> bool:
+        """保存或更新兑换码
+
+        Args:
+            code: 兑换码
+            description: 描述
+            reward_amount: 奖励数量
+            is_expired: 是否过期
+            expire_time: 过期时间
+            max_uses: 最大使用次数
+            enabled_groups: 允许使用的群列表（逗号分隔）
+
+        Returns:
+            是否成功
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            now = int(time.time())
+            await self._conn.execute(
+                """
+                INSERT INTO redeem_codes
+                (code, description, reward_amount, is_expired, expire_time, max_uses, enabled_groups, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(code) DO UPDATE SET
+                description = ?,
+                reward_amount = ?,
+                is_expired = ?,
+                expire_time = ?,
+                max_uses = ?,
+                enabled_groups = ?,
+                updated_at = ?
+                """,
+                (
+                    str(code),
+                    description,
+                    reward_amount,
+                    1 if is_expired else 0,
+                    expire_time,
+                    max_uses,
+                    enabled_groups,
+                    now,
+                    now,
+                    description,
+                    reward_amount,
+                    1 if is_expired else 0,
+                    expire_time,
+                    max_uses,
+                    enabled_groups,
+                    now,
+                ),
+            )
+            await self._conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 保存兑换码失败: {e}")
+            return False
+
+    async def increment_redeem_code_used_count(self, code: str) -> bool:
+        """增加兑换码使用次数
+
+        Args:
+            code: 兑换码
+
+        Returns:
+            是否成功
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            now = int(time.time())
+            await self._conn.execute(
+                """
+                UPDATE redeem_codes
+                SET used_count = used_count + 1, updated_at = ?
+                WHERE code = ?
+                """,
+                (now, str(code)),
+            )
+            await self._conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 增加兑换码使用次数失败: {e}")
+            return False
+
+    async def record_user_redeem(
+        self,
+        group_id: str,
+        user_id: str,
+        code: str,
+        reward_amount: float,
+    ) -> bool:
+        """记录用户兑换
+
+        Args:
+            group_id: 群ID
+            user_id: 用户ID
+            code: 兑换码
+            reward_amount: 奖励金额
+
+        Returns:
+            是否成功
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            now = int(time.time())
+            await self._conn.execute(
+                """
+                INSERT INTO user_redeem_records
+                (group_id, user_id, code, reward_amount, redeemed_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (str(group_id), str(user_id), str(code), reward_amount, now),
+            )
+            await self._conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 记录用户兑换失败: {e}")
+            return False
+
+    async def has_user_redeemed(self, group_id: str, user_id: str, code: str) -> bool:
+        """检查用户是否已兑换过该兑换码
+
+        Args:
+            group_id: 群ID
+            user_id: 用户ID
+            code: 兑换码
+
+        Returns:
+            是否已兑换
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            async with self._conn.execute(
+                """
+                SELECT 1 FROM user_redeem_records
+                WHERE group_id = ? AND user_id = ? AND code = ?
+                """,
+                (str(group_id), str(user_id), str(code)),
+            ) as cursor:
+                row = await cursor.fetchone()
+                return row is not None
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 检查用户兑换记录失败: {e}")
+            return False
+
+    async def get_redeem_code_list(self) -> list[dict[str, Any]]:
+        """获取所有兑换码列表
+
+        Returns:
+            兑换码信息列表
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            async with self._conn.execute(
+                "SELECT * FROM redeem_codes ORDER BY created_at DESC"
+            ) as cursor:
+                rows = await cursor.fetchall()
+                return [
+                    {
+                        "id": row["id"],
+                        "code": row["code"],
+                        "description": row["description"],
+                        "reward_amount": row["reward_amount"],
+                        "is_expired": bool(row["is_expired"]),
+                        "expire_time": row["expire_time"],
+                        "max_uses": row["max_uses"],
+                        "used_count": row["used_count"],
+                        "enabled_groups": row["enabled_groups"],
+                        "created_at": row["created_at"],
+                        "updated_at": row["updated_at"],
+                    }
+                    for row in rows
+                ]
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 获取兑换码列表失败: {e}")
+            return []
+
+    async def get_redeem_records_by_code(
+        self, code: str
+    ) -> list[dict[str, Any]]:
+        """获取指定兑换码的兑换记录
+
+        Args:
+            code: 兑换码
+
+        Returns:
+            兑换记录列表
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            async with self._conn.execute(
+                """
+                SELECT * FROM user_redeem_records
+                WHERE code = ?
+                ORDER BY redeemed_at DESC
+                """,
+                (str(code),),
+            ) as cursor:
+                rows = await cursor.fetchall()
+                return [
+                    {
+                        "id": row["id"],
+                        "group_id": row["group_id"],
+                        "user_id": row["user_id"],
+                        "code": row["code"],
+                        "reward_amount": row["reward_amount"],
+                        "redeemed_at": row["redeemed_at"],
+                    }
+                    for row in rows
+                ]
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 获取兑换记录失败: {e}")
+            return []
 
     async def close(self) -> None:
         """关闭数据库连接"""

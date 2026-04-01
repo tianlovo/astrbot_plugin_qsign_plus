@@ -257,6 +257,136 @@ class DataManager:
         """
         return self.db._initialized
 
+    async def get_redeem_code(self, code: str) -> dict | None:
+        """获取兑换码信息
+
+        Args:
+            code: 兑换码
+
+        Returns:
+            兑换码信息字典，如果不存在则返回 None
+        """
+        return await self.db.get_redeem_code(code)
+
+    async def use_redeem_code(
+        self, group_id: str, user_id: str, code: str
+    ) -> tuple[bool, str, float]:
+        """使用兑换码（原子操作）
+
+        Args:
+            group_id: 群ID
+            user_id: 用户ID
+            code: 兑换码
+
+        Returns:
+            (是否成功, 错误信息, 奖励金额)
+        """
+        from datetime import datetime
+
+        # 获取兑换码信息
+        redeem_code = await self.db.get_redeem_code(code)
+        if not redeem_code:
+            return False, "兑换码不存在", 0.0
+
+        # 检查是否过期（手动设置）
+        if redeem_code["is_expired"]:
+            return False, "兑换码已过期", 0.0
+
+        # 检查时间过期
+        if redeem_code["expire_time"]:
+            try:
+                expire_dt = datetime.strptime(
+                    redeem_code["expire_time"], "%Y-%m-%d %H:%M"
+                )
+                if datetime.now() > expire_dt:
+                    return False, "兑换码已过期", 0.0
+            except ValueError:
+                logger.warning(f"兑换码过期时间格式错误: {redeem_code['expire_time']}")
+
+        # 检查使用次数
+        max_uses = redeem_code["max_uses"]
+        if max_uses > 0 and redeem_code["used_count"] >= max_uses:
+            return False, "兑换码已被领完", 0.0
+
+        # 检查群限制
+        enabled_groups_str = redeem_code.get("enabled_groups", "")
+        if enabled_groups_str:
+            enabled_groups = [g.strip() for g in enabled_groups_str.split(",") if g.strip()]
+            if enabled_groups and str(group_id) not in enabled_groups:
+                return False, "该兑换码在当前群不可用", 0.0
+
+        # 检查用户是否已兑换
+        has_redeemed = await self.db.has_user_redeemed(group_id, user_id, code)
+        if has_redeemed:
+            return False, "您已经兑换过该兑换码了", 0.0
+
+        # 发放奖励
+        reward_amount = redeem_code["reward_amount"]
+        user_data = await self.get_user_data(group_id, user_id)
+        user_data["coins"] += reward_amount
+        await self.save_user_data(group_id, user_id, user_data)
+
+        # 更新兑换码使用次数
+        await self.db.increment_redeem_code_used_count(code)
+
+        # 记录用户兑换
+        await self.db.record_user_redeem(group_id, user_id, code, reward_amount)
+
+        return True, "兑换成功", reward_amount
+
+    async def get_all_redeem_codes(self) -> list[dict]:
+        """获取所有兑换码列表
+
+        Returns:
+            兑换码信息列表
+        """
+        return await self.db.get_redeem_code_list()
+
+    async def get_redeem_records_by_code(self, code: str) -> list[dict]:
+        """获取指定兑换码的兑换记录
+
+        Args:
+            code: 兑换码
+
+        Returns:
+            兑换记录列表
+        """
+        return await self.db.get_redeem_records_by_code(code)
+
+    async def sync_redeem_codes_from_config(self, config_codes: list[dict]):
+        """从配置同步兑换码到数据库
+
+        Args:
+            config_codes: 配置中的兑换码列表
+        """
+        for code_config in config_codes:
+            code = code_config.get("code", "").strip()
+            if not code:
+                continue
+
+            description = code_config.get("description", "")
+            reward_amount = code_config.get("reward_amount", 0.0)
+            is_expired = code_config.get("is_expired", False)
+            expire_time = code_config.get("expire_time", "")
+            max_uses = code_config.get("max_uses", 0)
+            enabled_groups = code_config.get("enabled_groups", [])
+
+            # 将群列表转换为逗号分隔的字符串
+            enabled_groups_str = ",".join(str(g) for g in enabled_groups) if enabled_groups else ""
+
+            # 保存到数据库（保留已使用次数）
+            await self.db.save_redeem_code(
+                code=code,
+                description=description,
+                reward_amount=reward_amount,
+                is_expired=is_expired,
+                expire_time=expire_time,
+                max_uses=max_uses,
+                enabled_groups=enabled_groups_str,
+            )
+
+        logger.info(f"已从配置同步 {len(config_codes)} 个兑换码到数据库")
+
     async def close(self):
         """关闭数据库连接"""
         await self.db.close()
