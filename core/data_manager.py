@@ -359,6 +359,9 @@ class DataManager:
         Args:
             config_codes: 配置中的兑换码列表
         """
+        from datetime import datetime
+
+        valid_count = 0
         for code_config in config_codes:
             code = code_config.get("code", "").strip()
             if not code:
@@ -370,6 +373,17 @@ class DataManager:
             expire_time = code_config.get("expire_time", "")
             max_uses = code_config.get("max_uses", 0)
             enabled_groups = code_config.get("enabled_groups", [])
+
+            # 校验过期时间格式
+            if expire_time:
+                try:
+                    datetime.strptime(expire_time, "%Y-%m-%d %H:%M")
+                except ValueError:
+                    logger.warning(
+                        f"兑换码 '{code}' 的过期时间格式错误: '{expire_time}'，"
+                        f"应为 'YYYY-MM-DD HH:MM' 格式，已清空该字段"
+                    )
+                    expire_time = ""
 
             # 将群列表转换为逗号分隔的字符串
             enabled_groups_str = ",".join(str(g) for g in enabled_groups) if enabled_groups else ""
@@ -384,8 +398,9 @@ class DataManager:
                 max_uses=max_uses,
                 enabled_groups=enabled_groups_str,
             )
+            valid_count += 1
 
-        logger.info(f"已从配置同步 {len(config_codes)} 个兑换码到数据库")
+        logger.info(f"已从配置同步 {valid_count} 个兑换码到数据库")
 
     async def close(self):
         """关闭数据库连接"""
