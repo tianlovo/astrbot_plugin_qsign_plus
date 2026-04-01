@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.7.4 (2026-04-01)
+
+### 移除
+- **打卡奖励服务**: 移除 `checkin_reward_service` 服务及相关功能
+  - 删除 `services/checkin_reward_service.py` 文件
+  - 从 `_conf_schema.json` 中移除打卡奖励配置（enable_checkin_reward、poll_interval、base_reward 等）
+  - 从 `core/database.py` 中移除打卡记录表及相关方法（record_checkin、get_checkin_records、get_user_checkin_record）
+
 ## v2.7.3 (2026-04-01)
 
 ### 优化
