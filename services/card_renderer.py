@@ -135,6 +135,7 @@ class CardRenderer:
             "is_query": is_query,
             "is_penalized": is_penalized,
             "original_earned": original_earned,
+            "currency_name": self.config.get("basic", {}).get("currency_name", "金币"),
         }
 
         if is_query:

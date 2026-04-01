@@ -29,7 +29,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.8.7",
+    "2.9.0",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -53,6 +53,15 @@ class ContractSystem(Star):
 
         # Load data to cache
         asyncio.create_task(self.data_manager.init())
+
+    def _get_currency_name(self) -> str:
+        """获取货币名称
+
+        Returns:
+            货币名称，默认为"金币"
+        """
+        basic_config = self.config.get("basic", {})
+        return basic_config.get("currency_name", "金币")
 
     async def _get_user_role(self, event: AstrMessageEvent, user_id: str) -> str:
         """获取用户在群中的角色
@@ -165,9 +174,10 @@ class ContractSystem(Star):
             compensation = total_cost
 
             if employer_data["coins"] < total_cost:
+                currency = self._get_currency_name()
                 await send_text_reply(
                     event,
-                    f"现金不足，恶意收购需要支付 {total_cost:.1f} 金币（含{takeover_rate * 100}%额外费用）。",
+                    f"现金不足，恶意收购需要支付 {total_cost:.1f} {currency}（含{takeover_rate * 100}%额外费用）。",
                 )
                 return
 
@@ -197,16 +207,18 @@ class ContractSystem(Star):
             original_owner_name = await self._get_user_name_from_platform(
                 event, original_owner_id
             )
+            currency = self._get_currency_name()
             await send_text_reply(
                 event,
-                f"恶意收购成功！您花费 {total_cost:.1f} 金币从 {original_owner_name} 手中抢走了 {target_name}。"
-                f"原雇主获得了全部转让费 {compensation:.1f} 金币。",
+                f"恶意收购成功！您花费 {total_cost:.1f} {currency}从 {original_owner_name} 手中抢走了 {target_name}。"
+                f"原雇主获得了全部转让费 {compensation:.1f} {currency}。",
             )
             return
 
         if employer_data["coins"] < total_cost:
+            currency = self._get_currency_name()
             await send_text_reply(
-                event, f"现金不足，雇佣需要支付目标身价：{total_cost:.1f}金币。"
+                event, f"现金不足，雇佣需要支付目标身价：{total_cost:.1f}{currency}。"
             )
             return
 
@@ -221,8 +233,9 @@ class ContractSystem(Star):
         await self.data_manager.increment_purchase_count(target_id)
 
         target_name = await self._get_user_name_from_platform(event, target_id)
+        currency = self._get_currency_name()
         await send_text_reply(
-            event, f"成功雇佣 {target_name}，消耗{total_cost:.1f}金币。"
+            event, f"成功雇佣 {target_name}，消耗{total_cost:.1f}{currency}。"
         )
 
     @filter.regex(r"^出售")
@@ -272,8 +285,9 @@ class ContractSystem(Star):
         await self.data_manager.save_user_data(group_id, user_id, employer_data)
 
         target_name = await self._get_user_name_from_platform(event, target_id)
+        currency = self._get_currency_name()
         await send_text_reply(
-            event, f"成功解雇 {target_name}，获得补偿金{sell_price:.1f}金币。"
+            event, f"成功解雇 {target_name}，获得补偿金{sell_price:.1f}{currency}。"
         )
 
     @filter.regex(r"^签到$")
@@ -335,32 +349,31 @@ class ContractSystem(Star):
             # Send text-only sign-in result with full details
             user_name = await self._get_user_name_from_platform(event, user_id)
             wealth_level, _ = self.wealth_system.get_wealth_info(user_data)
+            currency = self._get_currency_name()
 
-            sign_text = f"【签到成功】\n"
+            sign_text = "【签到成功】\n"
             sign_text += f"👤 用户: {user_name}\n"
             sign_text += f"💎 财富等级: {wealth_level}\n"
             sign_text += f"📊 状态: {'受雇' if is_penalized else '自由'}\n"
             sign_text += f"📅 签到时间: {now.strftime('%Y-%m-%d %H:%M:%S')}\n"
             sign_text += f"🔥 连续签到: {user_data['consecutive']} 天\n\n"
 
-            sign_text += f"【今日收益明细】\n"
-            sign_text += f"💵 基础收益: {base_with_bonus:.1f} 金币\n"
+            sign_text += "【今日收益明细】\n"
+            sign_text += f"💵 基础收益: {base_with_bonus:.1f} {currency}\n"
             if contract_bonus > 0:
-                sign_text += f"👥 雇员加成: {contract_bonus:.1f} 金币\n"
+                sign_text += f"👥 雇员加成: {contract_bonus:.1f} {currency}\n"
             if consecutive_bonus > 0:
-                sign_text += f"🔥 连续签到加成: {consecutive_bonus:.1f} 金币\n"
-            sign_text += f"🏦 银行利息: {interest:.1f} 金币\n"
-            sign_text += f"📊 小计: {original_earned:.1f} 金币\n"
+                sign_text += f"🔥 连续签到加成: {consecutive_bonus:.1f} {currency}\n"
+            sign_text += f"🏦 银行利息: {interest:.1f} {currency}\n"
+            sign_text += f"📊 小计: {original_earned:.1f} {currency}\n"
             if is_penalized:
-                sign_text += f"⚠️ 受雇惩罚后: {earned:.1f} 金币\n"
-            sign_text += f"✅ 今日总收益: {earned:.1f} 金币\n\n"
+                sign_text += f"⚠️ 受雇惩罚后: {earned:.1f} {currency}\n"
+            sign_text += f"✅ 今日总收益: {earned:.1f} {currency}\n\n"
 
-            sign_text += f"【资产状况】\n"
-            sign_text += f"💰 现金: {user_data['coins']:.1f} 金币\n"
-            sign_text += f"🏦 银行存款: {user_data['bank']:.1f} 金币\n"
-            sign_text += (
-                f"💎 总资产: {user_data['coins'] + user_data['bank']:.1f} 金币\n\n"
-            )
+            sign_text += "【资产状况】\n"
+            sign_text += f"💰 现金: {user_data['coins']:.1f} {currency}\n"
+            sign_text += f"🏦 银行存款: {user_data['bank']:.1f} {currency}\n"
+            sign_text += f"💎 总资产: {user_data['coins'] + user_data['bank']:.1f} {currency}\n\n"
 
             sign_text += f"👥 雇员数量: {len(user_data['contractors'])} 人"
             await send_text_reply(event, sign_text)
@@ -410,11 +423,14 @@ class ContractSystem(Star):
         ]
         names = await asyncio.gather(*name_coroutines)
 
+        currency = self._get_currency_name()
         leaderboard_str = "本群财富排行榜\n" + "-" * 20 + "\n"
         for rank, ((user_id, total_wealth), user_name) in enumerate(
             zip(top_10_users, names), start=1
         ):
-            leaderboard_str += f"第{rank}名: {user_name} - {total_wealth:.1f} 金币\n"
+            leaderboard_str += (
+                f"第{rank}名: {user_name} - {total_wealth:.1f} {currency}\n"
+            )
 
         await send_text_reply(event, leaderboard_str.strip())
 
@@ -439,9 +455,10 @@ class ContractSystem(Star):
             group_id, user_data, user_id
         )
 
+        currency = self._get_currency_name()
         if user_data["coins"] < cost:
             await send_text_reply(
-                event, f"金币不足，需要支付赎身费用：{cost:.1f}金币。"
+                event, f"{currency}不足，需要支付赎身费用：{cost:.1f}{currency}。"
             )
             return
 
@@ -467,8 +484,8 @@ class ContractSystem(Star):
         employer_name = await self._get_user_name_from_platform(event, employer_id)
         await send_text_reply(
             event,
-            f"赎身成功，消耗{cost:.1f}金币，重获自由！"
-            f"原雇主 {employer_name} 获得了 {compensation:.1f} 金币作为补偿。",
+            f"赎身成功，消耗{cost:.1f}{currency}，重获自由！"
+            f"原雇主 {employer_name} 获得了 {compensation:.1f} {currency}作为补偿。",
         )
 
     @filter.regex(r"^(我的信息|签到查询|我的资产|详细信息|我的详细信息)$")
@@ -502,6 +519,7 @@ class ContractSystem(Star):
 
             # Format user info text
             total_wealth = user_data["coins"] + user_data["bank"]
+            currency = self._get_currency_name()
 
             if is_detailed:
                 # Detailed info output
@@ -518,22 +536,24 @@ class ContractSystem(Star):
                 )
                 info_text += f"📅 查询时间: {now.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
 
-                info_text += f"【资产状况】\n"
-                info_text += f"💰 现金: {user_data['coins']:.1f} 金币\n"
-                info_text += f"🏦 银行存款: {user_data['bank']:.1f} 金币\n"
-                info_text += f"💎 总资产: {total_wealth:.1f} 金币\n"
+                info_text += "【资产状况】\n"
+                info_text += f"💰 现金: {user_data['coins']:.1f} {currency}\n"
+                info_text += f"🏦 银行存款: {user_data['bank']:.1f} {currency}\n"
+                info_text += f"💎 总资产: {total_wealth:.1f} {currency}\n"
                 info_text += f"🔥 连续签到: {user_data['consecutive']} 天\n\n"
 
-                info_text += f"【明日预计收入】\n"
-                info_text += f"💵 基础收益: {income_info['base']:.1f} 金币\n"
+                info_text += "【明日预计收入】\n"
+                info_text += f"💵 基础收益: {income_info['base']:.1f} {currency}\n"
                 if income_info["contract_bonus"] > 0:
                     info_text += (
-                        f"👥 雇员加成: {income_info['contract_bonus']:.1f} 金币\n"
+                        f"👥 雇员加成: {income_info['contract_bonus']:.1f} {currency}\n"
                     )
                 if income_info["consecutive_bonus"] > 0:
-                    info_text += f"🔥 连续签到加成: {income_info['consecutive_bonus']:.1f} 金币\n"
-                info_text += f"🏦 银行利息: {income_info['interest']:.1f} 金币\n"
-                info_text += f"📊 明日预计总收入: {income_info['total']:.1f} 金币\n\n"
+                    info_text += f"🔥 连续签到加成: {income_info['consecutive_bonus']:.1f} {currency}\n"
+                info_text += f"🏦 银行利息: {income_info['interest']:.1f} {currency}\n"
+                info_text += (
+                    f"📊 明日预计总收入: {income_info['total']:.1f} {currency}\n\n"
+                )
 
                 # Add contractor info
                 if user_data["contractors"]:
@@ -551,9 +571,9 @@ class ContractSystem(Star):
             else:
                 # Simple info output (default)
                 info_text = f"【{user_name} 的资产】\n"
-                info_text += f"💰 现金: {user_data['coins']:.1f} 金币\n"
-                info_text += f"🏦 银行: {user_data['bank']:.1f} 金币\n"
-                info_text += f"💎 总资产: {total_wealth:.1f} 金币\n"
+                info_text += f"💰 现金: {user_data['coins']:.1f} {currency}\n"
+                info_text += f"🏦 银行: {user_data['bank']:.1f} {currency}\n"
+                info_text += f"💎 总资产: {total_wealth:.1f} {currency}\n"
 
                 # Add contractor info
                 if user_data["contractors"]:
@@ -569,7 +589,7 @@ class ContractSystem(Star):
                     )
                     info_text += f"🔒 雇主: {owner_name}\n"
 
-                info_text += f"📈 明日预计: {income_info['total']:.1f} 金币"
+                info_text += f"📈 明日预计: {income_info['total']:.1f} {currency}"
 
             await send_text_reply(event, info_text)
             return
@@ -595,10 +615,11 @@ class ContractSystem(Star):
 
             # Format user info text
             total_wealth = user_data["coins"] + user_data["bank"]
+            currency = self._get_currency_name()
             info_text = f"【{user_name} 的资产信息】\n"
-            info_text += f"💰 现金: {user_data['coins']:.1f} 金币\n"
-            info_text += f"🏦 银行存款: {user_data['bank']:.1f} 金币\n"
-            info_text += f"💎 总资产: {total_wealth:.1f} 金币\n"
+            info_text += f"💰 现金: {user_data['coins']:.1f} {currency}\n"
+            info_text += f"🏦 银行存款: {user_data['bank']:.1f} {currency}\n"
+            info_text += f"💎 总资产: {total_wealth:.1f} {currency}\n"
 
             # Add contractor info
             if user_data["contractors"]:
@@ -701,7 +722,8 @@ class ContractSystem(Star):
         # Save user data to database
         await self.data_manager.save_user_data(group_id, user_id, user_data)
 
-        await send_text_reply(event, f"成功存入 {amount:.1f} 金币到银行。")
+        currency = self._get_currency_name()
+        await send_text_reply(event, f"成功存入 {amount:.1f} {currency}到银行。")
 
     @filter.regex(r"^(取款|取钱)\s*([0-9.]+)$")
     async def withdraw(self, event: AstrMessageEvent):
@@ -744,7 +766,8 @@ class ContractSystem(Star):
         # Save user data to database
         await self.data_manager.save_user_data(group_id, user_id, user_data)
 
-        await send_text_reply(event, f"成功取出 {amount:.1f} 金币。")
+        currency = self._get_currency_name()
+        await send_text_reply(event, f"成功取出 {amount:.1f} {currency}。")
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def on_at_bot(self, event: AstrMessageEvent):
@@ -824,8 +847,9 @@ class ContractSystem(Star):
         reward_max = at_reward_config.get("at_reward_max", 10.0)
         reward_amount = round(random.uniform(reward_min, reward_max), 1)
 
+        currency = self._get_currency_name()
         logger.info(
-            f"[AtReward] 用户 {user_name}({user_id}) 触发奖励，获得 {reward_amount:.1f} 金币"
+            f"[AtReward] 用户 {user_name}({user_id}) 触发奖励，获得 {reward_amount:.1f} {currency}"
         )
 
         # 发放奖励
@@ -847,11 +871,11 @@ class ContractSystem(Star):
         )
 
         logger.info(
-            f"[AtReward] 用户 {user_name}({user_id}) 今日at奖励: {new_count}/{daily_limit} 次，累计 {new_total:.1f} 金币"
+            f"[AtReward] 用户 {user_name}({user_id}) 今日at奖励: {new_count}/{daily_limit} 次，累计 {new_total:.1f} {currency}"
         )
 
         # 发送奖励消息（简化版，仅提示获得的用户和金额）
-        reward_msg = f"🎉 {user_name} 获得了随机掉落的 {reward_amount:.1f} 金币！"
+        reward_msg = f"🎉 {user_name} 获得了随机掉落的 {reward_amount:.1f} {currency}！"
         await send_text_reply(event, reward_msg)
 
     async def terminate(self):

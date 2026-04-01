@@ -139,7 +139,7 @@
             <div class="panel panel-income">
                 <div class="title">{{ income_title }}</div>
                 {% if is_query %}
-                    <div class="income-total">{{ '%.1f'|format(total_income) }} 金币</div>
+                    <div class="income-total">{{ '%.1f'|format(total_income) }} {{ currency_name }}</div>
                     <div class="income-detail">
                         基础{{ '%.1f'|format(base_with_bonus) }} + 契约{{ '%.1f'|format(contract_bonus) }} + 连签{{ '%.1f'|format(consecutive_bonus) }} + 利息{{ '%.1f'|format(tomorrow_interest) }}
                     </div>
