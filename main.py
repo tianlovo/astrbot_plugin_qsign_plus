@@ -1,5 +1,6 @@
 import asyncio
 import os
+import random
 from datetime import datetime
 
 import pytz
@@ -28,7 +29,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.8.2",
+    "2.8.3",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
