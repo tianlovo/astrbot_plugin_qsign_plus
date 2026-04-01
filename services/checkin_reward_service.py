@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import astrbot.api.message_components as Comp
+import pytz
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from astrbot.api import logger
@@ -52,6 +53,16 @@ class CheckinRewardService:
         self.third_extra = checkin_config.get("third_extra_reward", 20.0)
         self.decay_rate = checkin_config.get("decay_rate", 0.1)
 
+        # 时区配置
+        timezone_str = checkin_config.get("timezone", "Asia/Shanghai")
+        try:
+            self.timezone = pytz.timezone(timezone_str)
+        except pytz.UnknownTimeZoneError:
+            logger.warning(
+                f"[CheckinReward] 未知时区: {timezone_str}，使用默认时区 Asia/Shanghai"
+            )
+            self.timezone = pytz.timezone("Asia/Shanghai")
+
         # 运行时状态
         self._current_date: str = ""
         self._daily_checkin_count: dict[str, int] = {}  # {group_id: count}
@@ -66,8 +77,8 @@ class CheckinRewardService:
             logger.info("[CheckinReward] 打卡奖励服务已禁用")
             return
 
-        # 初始化今日日期
-        self._current_date = datetime.now().strftime("%Y-%m-%d")
+        # 初始化今日日期（使用时区）
+        self._current_date = datetime.now(self.timezone).strftime("%Y-%m-%d")
         self._daily_checkin_count = {}
         self._processed_checkins = {}
         self._first_batch_sent = {}
@@ -102,8 +113,8 @@ class CheckinRewardService:
     async def _poll_checkin_data(self) -> None:
         """轮询群打卡数据"""
         try:
-            # 检查是否新的一天
-            today = datetime.now().strftime("%Y-%m-%d")
+            # 检查是否新的一天（使用时区）
+            today = datetime.now(self.timezone).strftime("%Y-%m-%d")
             if today != self._current_date:
                 self._reset_daily_data(today)
 

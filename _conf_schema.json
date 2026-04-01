@@ -139,6 +139,12 @@
         "description": "奖励递减系数",
         "default": 0.1,
         "hint": "第4名及以后，每晚一名递减10%，最低为基数的50%。"
+      },
+      "timezone": {
+        "type": "string",
+        "description": "时区设置",
+        "default": "Asia/Shanghai",
+        "hint": "打卡奖励服务使用的时区，影响每日重置时间。常用时区：Asia/Shanghai（中国）、Asia/Tokyo（日本）、America/New_York（美国东部）、Europe/London（伦敦）。"
       }
     }
   }
