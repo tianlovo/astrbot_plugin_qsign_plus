@@ -918,6 +918,8 @@ class ContractSystem(Star):
             await send_text_reply(event, "请输入兑换码。")
             return
 
+        logger.info(f"[Redeem] 用户尝试兑换，解析到的兑换码: '{code}'")
+
         user_id = str(event.get_sender_id())
 
         # 使用兑换码
