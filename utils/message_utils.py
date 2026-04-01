@@ -35,14 +35,31 @@ async def send_text_reply(event: AstrMessageEvent, text: str) -> str | None:
     Returns:
         发送的消息ID，失败返回None
     """
-    chain = create_reply_chain(event, text)
-    result = await event.send(event.chain_result(chain))
-    # 尝试获取发送的消息ID
     try:
-        if result and hasattr(result, 'message_id'):
-            return str(result.message_id)
-    except Exception:
-        pass
+        if event.get_platform_name() == "aiocqhttp":
+            from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
+                AiocqhttpMessageEvent,
+            )
+
+            if isinstance(event, AiocqhttpMessageEvent):
+                client = event.bot
+                group_id = event.message_obj.group_id
+                # 引用原消息
+                reply_message_id = event.message_obj.message_id
+                # 构建消息链：引用 + 文本
+                message_chain = [
+                    {"type": "reply", "data": {"id": str(reply_message_id)}},
+                    {"type": "text", "data": {"text": text}},
+                ]
+                result = await client.api.call_action(
+                    "send_group_msg",
+                    group_id=group_id,
+                    message=message_chain,
+                )
+                if result and "message_id" in result:
+                    return str(result["message_id"])
+    except Exception as e:
+        logger.warning(f"发送文字回复失败: {e}")
     return None
 
 
@@ -84,11 +101,8 @@ async def recall_message(event: AstrMessageEvent, message_id: str) -> bool:
 
             if isinstance(event, AiocqhttpMessageEvent):
                 client = event.bot
-                group_id = event.message_obj.group_id
-                await client.api.call_action(
-                    "delete_msg",
-                    message_id=int(message_id),
-                )
+                await client.delete_msg(message_id=int(message_id))
+                logger.info(f"成功撤回消息: {message_id}")
                 return True
     except Exception as e:
         logger.warning(f"撤回消息失败: {e}")

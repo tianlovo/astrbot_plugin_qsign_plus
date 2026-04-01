@@ -453,7 +453,10 @@ class ContractSystem(Star):
         # Initialize query state
         if group_id not in self._query_states:
             self._query_states[group_id] = {}
-        self._query_states[group_id][user_id] = {"text_message_id": None, "is_generating": True}
+        self._query_states[group_id][user_id] = {
+            "text_message_id": None,
+            "is_generating": True,
+        }
 
         try:
             # Get user data for text version
@@ -490,7 +493,9 @@ class ContractSystem(Star):
             # Send text message and get message ID
             text_message_id = await send_text_reply(event, info_text)
             if text_message_id:
-                self._query_states[group_id][user_id]["text_message_id"] = text_message_id
+                self._query_states[group_id][user_id]["text_message_id"] = (
+                    text_message_id
+                )
 
             # Generate image asynchronously
             bg_api_url = basic_config.get("bg_api_url", "https://t.alcy.cc/ycy")
@@ -516,7 +521,10 @@ class ContractSystem(Star):
 
         finally:
             # Clean up query state
-            if group_id in self._query_states and user_id in self._query_states[group_id]:
+            if (
+                group_id in self._query_states
+                and user_id in self._query_states[group_id]
+            ):
                 del self._query_states[group_id][user_id]
                 # Clean up empty group
                 if not self._query_states[group_id]:
