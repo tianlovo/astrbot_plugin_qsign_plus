@@ -13,6 +13,7 @@ from .core.wealth_system import WealthSystem
 from .services.card_renderer import CardRenderer
 from .services.image_cache import ImageCacheService
 from .utils.helpers import get_first_at_user, get_target_at_user, is_at_bot, is_group_allowed
+from .utils.message_utils import send_text_reply, send_image_reply
 
 PLUGIN_DIR = os.path.dirname(__file__)
 SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
@@ -22,7 +23,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.5.1",
+    "2.6.0",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -103,13 +104,13 @@ class ContractSystem(Star):
             target_id = get_first_at_user(event)
 
         if not target_id:
-            yield event.plain_result("请使用@指定要购买的对象。")
+            await send_text_reply(event, "请使用@指定要购买的对象。")
             return
 
         user_id = str(event.get_sender_id())
 
         if user_id == target_id:
-            yield event.plain_result("您不能购买自己。")
+            await send_text_reply(event, "您不能购买自己。")
             return
 
         # 检查目标用户角色
@@ -120,7 +121,7 @@ class ContractSystem(Star):
         if target_role == "owner":
             owner_can_be_purchased = admin_config.get("owner_can_be_purchased", False)
             if not owner_can_be_purchased:
-                yield event.plain_result("群主不可被购买！")
+                await send_text_reply(event, "群主不可被购买！")
                 return
 
         # 获取基础身价
@@ -128,7 +129,7 @@ class ContractSystem(Star):
         target_data = await self.data_manager.get_user_data(group_id, target_id)
 
         if len(employer_data["contractors"]) >= 3:
-            yield event.plain_result("已达到最大雇佣数量（3人）。")
+            await send_text_reply(event, "已达到最大雇佣数量（3人）。")
             return
 
         base_cost = await self.wealth_system.calculate_dynamic_wealth_value(
@@ -145,7 +146,7 @@ class ContractSystem(Star):
 
         if original_owner_id:
             if original_owner_id == user_id:
-                yield event.plain_result("该用户已经是您的雇员了。")
+                await send_text_reply(event, "该用户已经是您的雇员了。")
                 return
 
             trade_config = self.config.get("trade", {})
@@ -155,7 +156,8 @@ class ContractSystem(Star):
             compensation = total_cost
 
             if employer_data["coins"] < total_cost:
-                yield event.plain_result(
+                await send_text_reply(
+                    event,
                     f"现金不足，恶意收购需要支付 {total_cost:.1f} 金币（含{takeover_rate * 100}%额外费用）。"
                 )
                 return
@@ -186,14 +188,16 @@ class ContractSystem(Star):
             original_owner_name = await self._get_user_name_from_platform(
                 event, original_owner_id
             )
-            yield event.plain_result(
+            await send_text_reply(
+                event,
                 f"恶意收购成功！您花费 {total_cost:.1f} 金币从 {original_owner_name} 手中抢走了 {target_name}。"
                 f"原雇主获得了全部转让费 {compensation:.1f} 金币。"
             )
             return
 
         if employer_data["coins"] < total_cost:
-            yield event.plain_result(
+            await send_text_reply(
+                event,
                 f"现金不足，雇佣需要支付目标身价：{total_cost:.1f}金币。"
             )
             return
@@ -209,7 +213,7 @@ class ContractSystem(Star):
         await self.data_manager.increment_purchase_count(target_id)
 
         target_name = await self._get_user_name_from_platform(event, target_id)
-        yield event.plain_result(f"成功雇佣 {target_name}，消耗{total_cost:.1f}金币。")
+        await send_text_reply(event, f"成功雇佣 {target_name}，消耗{total_cost:.1f}金币。")
 
     @filter.regex(r"^出售")
     async def sell(self, event: AstrMessageEvent):
@@ -228,7 +232,7 @@ class ContractSystem(Star):
             target_id = get_first_at_user(event)
 
         if not target_id:
-            yield event.plain_result("请使用@指定要出售的对象。")
+            await send_text_reply(event, "请使用@指定要出售的对象。")
             return
 
         user_id = str(event.get_sender_id())
@@ -237,7 +241,7 @@ class ContractSystem(Star):
         target_data = await self.data_manager.get_user_data(group_id, target_id)
 
         if target_id not in employer_data["contractors"]:
-            yield event.plain_result("该用户不在你的雇员列表中。")
+            await send_text_reply(event, "该用户不在你的雇员列表中。")
             return
 
         trade_config = self.config.get("trade", {})
@@ -258,7 +262,8 @@ class ContractSystem(Star):
         await self.data_manager.save_user_data(group_id, user_id, employer_data)
 
         target_name = await self._get_user_name_from_platform(event, target_id)
-        yield event.plain_result(
+        await send_text_reply(
+            event,
             f"成功解雇 {target_name}，获得补偿金{sell_price:.1f}金币。"
         )
 
@@ -282,7 +287,7 @@ class ContractSystem(Star):
             last_sign_dt = datetime.fromisoformat(user_data["last_sign"])
             last_sign_aware = SHANGHAI_TZ.localize(last_sign_dt)
             if last_sign_aware.date() == today:
-                yield event.plain_result("你今天已经签到过了，明天再来吧。")
+                await send_text_reply(event, "你今天已经签到过了，明天再来吧。")
                 return
             if (today - last_sign_aware.date()).days == 1:
                 user_data["consecutive"] += 1
@@ -328,12 +333,12 @@ class ContractSystem(Star):
                 self.card_renderer.get_template(), render_data
             )
             if html_url:
-                yield event.image_result(html_url)
+                await send_image_reply(event, html_url)
             else:
-                yield event.plain_result("签到成功！但图片生成失败。")
+                await send_text_reply(event, "签到成功！但图片生成失败。")
         except Exception as e:
             logger.error(f"HTML 渲染失败: {e}")
-            yield event.plain_result("签到成功！但图片生成失败。")
+            await send_text_reply(event, "签到成功！但图片生成失败。")
 
     @filter.regex(r"^(排行榜|财富榜)$")
     async def leaderboard(self, event: AstrMessageEvent):
@@ -349,7 +354,7 @@ class ContractSystem(Star):
         top_10_users = await self.data_manager.get_leaderboard(group_id, limit=10)
 
         if not top_10_users:
-            yield event.plain_result("本群暂无签到数据，无法生成排行榜。")
+            await send_text_reply(event, "本群暂无签到数据，无法生成排行榜。")
             return
 
         user_ids_to_fetch = [user[0] for user in top_10_users]
@@ -364,7 +369,7 @@ class ContractSystem(Star):
         ):
             leaderboard_str += f"第{rank}名: {user_name} - {total_wealth:.1f} 金币\n"
 
-        yield event.plain_result(leaderboard_str.strip())
+        await send_text_reply(event, leaderboard_str.strip())
 
     @filter.regex(r"^赎身$")
     async def terminate_contract(self, event: AstrMessageEvent):
@@ -380,7 +385,7 @@ class ContractSystem(Star):
         user_data = await self.data_manager.get_user_data(group_id, user_id)
 
         if not user_data["contracted_by"]:
-            yield event.plain_result("您是自由身，无需赎身。")
+            await send_text_reply(event, "您是自由身，无需赎身。")
             return
 
         cost = await self.wealth_system.calculate_dynamic_wealth_value(
@@ -388,7 +393,7 @@ class ContractSystem(Star):
         )
 
         if user_data["coins"] < cost:
-            yield event.plain_result(f"金币不足，需要支付赎身费用：{cost:.1f}金币。")
+            await send_text_reply(event, f"金币不足，需要支付赎身费用：{cost:.1f}金币。")
             return
 
         employer_id = user_data["contracted_by"]
@@ -411,7 +416,8 @@ class ContractSystem(Star):
         await self.data_manager.save_user_data(group_id, employer_id, employer_data)
 
         employer_name = await self._get_user_name_from_platform(event, employer_id)
-        yield event.plain_result(
+        await send_text_reply(
+            event,
             f"赎身成功，消耗{cost:.1f}金币，重获自由！"
             f"原雇主 {employer_name} 获得了 {compensation:.1f} 金币作为补偿。"
         )
@@ -436,12 +442,12 @@ class ContractSystem(Star):
                 self.card_renderer.get_template(), render_data
             )
             if html_url:
-                yield event.image_result(html_url)
+                await send_image_reply(event, html_url)
             else:
-                yield event.plain_result("查询失败，图片生成服务出现问题。")
+                await send_text_reply(event, "查询失败，图片生成服务出现问题。")
         except Exception as e:
             logger.error(f"HTML 渲染失败: {e}")
-            yield event.plain_result("查询失败，图片生成服务出现问题。")
+            await send_text_reply(event, "查询失败，图片生成服务出现问题。")
 
     @filter.regex(r"^(存款|存钱)\s+([0-9.]+)$")
     async def deposit(self, event: AstrMessageEvent):
@@ -457,23 +463,23 @@ class ContractSystem(Star):
         message_str = event.message_str
         match = __import__("re").match(r"^(存款|存钱)\s+([0-9.]+)$", message_str)
         if not match:
-            yield event.plain_result("金额格式不正确，请使用：存款 <数字>")
+            await send_text_reply(event, "金额格式不正确，请使用：存款 <数字>")
             return
 
         try:
             amount = float(match.group(2))
             if amount <= 0:
-                yield event.plain_result("存款金额必须大于0。")
+                await send_text_reply(event, "存款金额必须大于0。")
                 return
         except ValueError:
-            yield event.plain_result("金额格式不正确，请使用：存款 <数字>")
+            await send_text_reply(event, "金额格式不正确，请使用：存款 <数字>")
             return
 
         user_id = str(event.get_sender_id())
         user_data = await self.data_manager.get_user_data(group_id, user_id)
 
         if amount > user_data["coins"]:
-            yield event.plain_result(f"现金不足，当前现金：{user_data['coins']:.1f}")
+            await send_text_reply(event, f"现金不足，当前现金：{user_data['coins']:.1f}")
             return
 
         user_data["coins"] -= amount
@@ -482,7 +488,7 @@ class ContractSystem(Star):
         # Save user data to database
         await self.data_manager.save_user_data(group_id, user_id, user_data)
 
-        yield event.plain_result(f"成功存入 {amount:.1f} 金币到银行。")
+        await send_text_reply(event, f"成功存入 {amount:.1f} 金币到银行。")
 
     @filter.regex(r"^(取款|取钱)\s+([0-9.]+)$")
     async def withdraw(self, event: AstrMessageEvent):
@@ -498,23 +504,23 @@ class ContractSystem(Star):
         message_str = event.message_str
         match = __import__("re").match(r"^(取款|取钱)\s+([0-9.]+)$", message_str)
         if not match:
-            yield event.plain_result("金额格式不正确，请使用：取款 <数字>")
+            await send_text_reply(event, "金额格式不正确，请使用：取款 <数字>")
             return
 
         try:
             amount = float(match.group(2))
             if amount <= 0:
-                yield event.plain_result("取款金额必须大于0。")
+                await send_text_reply(event, "取款金额必须大于0。")
                 return
         except ValueError:
-            yield event.plain_result("金额格式不正确，请使用：取款 <数字>")
+            await send_text_reply(event, "金额格式不正确，请使用：取款 <数字>")
             return
 
         user_id = str(event.get_sender_id())
         user_data = await self.data_manager.get_user_data(group_id, user_id)
 
         if amount > user_data["bank"]:
-            yield event.plain_result(f"银行存款不足，当前存款：{user_data['bank']:.1f}")
+            await send_text_reply(event, f"银行存款不足，当前存款：{user_data['bank']:.1f}")
             return
 
         user_data["bank"] -= amount
@@ -523,7 +529,7 @@ class ContractSystem(Star):
         # Save user data to database
         await self.data_manager.save_user_data(group_id, user_id, user_data)
 
-        yield event.plain_result(f"成功取出 {amount:.1f} 金币。")
+        await send_text_reply(event, f"成功取出 {amount:.1f} 金币。")
 
     async def terminate(self):
         """插件终止时关闭资源"""
