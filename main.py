@@ -29,7 +29,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.8.6",
+    "2.8.7",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -799,20 +799,23 @@ class ContractSystem(Star):
             )
             return
 
-        # 概率判定
+        # 概率判定（使用整数比较，避免浮点精度问题）
         probability = at_reward_config.get("at_reward_probability", 0.3)
         # 确保概率在有效范围内
         probability = max(0.0, min(1.0, float(probability)))
 
-        random_value = random.random()
+        # 将概率转换为千分比整数（0-1000）
+        probability_int = int(probability * 1000)
+        random_int = random.randint(1, 1000)
+
         logger.info(
-            f"[AtReward] 用户 {user_name}({user_id}) at机器人，概率判定: 随机值={random_value:.4f}, 目标概率={probability:.4f}"
+            f"[AtReward] 用户 {user_name}({user_id}) at机器人，概率判定: 随机值={random_int}/1000, 目标概率={probability_int}/1000 ({probability:.1%})"
         )
 
-        if random_value > probability:
+        if random_int > probability_int:
             # 未中奖，静默处理
             logger.info(
-                f"[AtReward] 用户 {user_name}({user_id}) 未触发奖励 (随机值{random_value:.4f} > 目标概率{probability:.4f})"
+                f"[AtReward] 用户 {user_name}({user_id}) 未触发奖励 (随机值{random_int} > 目标概率{probability_int})"
             )
             return
 
