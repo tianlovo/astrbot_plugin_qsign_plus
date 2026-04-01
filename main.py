@@ -28,7 +28,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.7.0",
+    "2.7.1",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -326,8 +326,26 @@ class ContractSystem(Star):
         # Save user data to database
         await self.data_manager.save_user_data(group_id, user_id, user_data)
 
-        # Generate card
+        # Check if image card is enabled
         basic_config = self.config.get("basic", {})
+        enable_image_card = basic_config.get("enable_image_card", True)
+
+        if not enable_image_card:
+            # Send text-only sign-in result
+            user_name = await self._get_user_name_from_platform(event, user_id)
+            sign_text = f"【签到成功】\n"
+            sign_text += f"用户: {user_name}\n"
+            sign_text += f"获得金币: {earned:.1f}\n"
+            if is_penalized:
+                sign_text += f"(原应得: {original_earned:.1f}, 被雇佣惩罚后)\n"
+            sign_text += f"连续签到: {user_data['consecutive']} 天\n"
+            sign_text += f"💰 现金: {user_data['coins']:.1f} 金币\n"
+            sign_text += f"🏦 银行存款: {user_data['bank']:.1f} 金币\n"
+            sign_text += f"💎 总资产: {user_data['coins'] + user_data['bank']:.1f} 金币"
+            await send_text_reply(event, sign_text)
+            return
+
+        # Generate card
         bg_api_url = basic_config.get("bg_api_url", "https://t.alcy.cc/ycy")
         render_data = await self.card_renderer.generate_sign_card(
             event,
@@ -443,6 +461,42 @@ class ContractSystem(Star):
             return
 
         user_id = str(event.get_sender_id())
+
+        # Check if image card is enabled
+        enable_image_card = basic_config.get("enable_image_card", True)
+
+        if not enable_image_card:
+            # Send text-only query result
+            user_data = await self.data_manager.get_user_data(group_id, user_id)
+            user_name = await self._get_user_name_from_platform(event, user_id)
+
+            # Format user info text
+            total_wealth = user_data["coins"] + user_data["bank"]
+            info_text = f"【{user_name} 的资产信息】\n"
+            info_text += f"💰 现金: {user_data['coins']:.1f} 金币\n"
+            info_text += f"🏦 银行存款: {user_data['bank']:.1f} 金币\n"
+            info_text += f"💎 总资产: {total_wealth:.1f} 金币\n"
+
+            # Add contractor info
+            if user_data["contractors"]:
+                contractor_names = []
+                for cid in user_data["contractors"]:
+                    cname = await self._get_user_name_from_platform(event, cid)
+                    contractor_names.append(cname)
+                info_text += f"👥 雇员: {', '.join(contractor_names)}\n"
+
+            if user_data["contracted_by"]:
+                owner_name = await self._get_user_name_from_platform(
+                    event, user_data["contracted_by"]
+                )
+                info_text += f"🔒 雇主: {owner_name}\n"
+
+            # Add consecutive sign-in info
+            if user_data["consecutive"] > 0:
+                info_text += f"📅 连续签到: {user_data['consecutive']} 天"
+
+            await send_text_reply(event, info_text)
+            return
 
         # Check if there's already a query in progress for this user
         if group_id in self._query_states and user_id in self._query_states[group_id]:

@@ -15,6 +15,12 @@
         "description": "背景图片API地址",
         "default": "https://t.alcy.cc/ycy",
         "hint": "用于签到卡片背景的随机图片API。若失败则使用本地备用图。"
+      },
+      "enable_image_card": {
+        "type": "bool",
+        "description": "是否启用图片卡片",
+        "default": true,
+        "hint": "关闭后，签到和查询将只发送文字信息，不生成图片卡片。"
       }
     }
   },
