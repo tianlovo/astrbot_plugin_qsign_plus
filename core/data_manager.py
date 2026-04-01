@@ -191,6 +191,64 @@ class DataManager:
         """
         await self.db.increment_purchase_count(user_id)
 
+    async def record_at_reward(
+        self,
+        group_id: str,
+        user_id: str,
+        reward_date: str,
+        reward_amount: float,
+    ) -> bool:
+        """记录at奖励
+
+        Args:
+            group_id: 群ID
+            user_id: 用户ID
+            reward_date: 奖励日期 (YYYY-MM-DD)
+            reward_amount: 奖励金额
+
+        Returns:
+            是否成功
+        """
+        return await self.db.record_at_reward(
+            group_id, user_id, reward_date, reward_amount
+        )
+
+    async def get_user_at_reward_count(
+        self,
+        group_id: str,
+        user_id: str,
+        reward_date: str,
+    ) -> int:
+        """获取用户指定日期的at奖励次数
+
+        Args:
+            group_id: 群ID
+            user_id: 用户ID
+            reward_date: 奖励日期 (YYYY-MM-DD)
+
+        Returns:
+            奖励次数
+        """
+        return await self.db.get_user_at_reward_count(group_id, user_id, reward_date)
+
+    async def get_user_at_reward_total(
+        self,
+        group_id: str,
+        user_id: str,
+        reward_date: str,
+    ) -> float:
+        """获取用户指定日期的at奖励总金额
+
+        Args:
+            group_id: 群ID
+            user_id: 用户ID
+            reward_date: 奖励日期 (YYYY-MM-DD)
+
+        Returns:
+            奖励总金额
+        """
+        return await self.db.get_user_at_reward_total(group_id, user_id, reward_date)
+
     async def close(self):
         """关闭数据库连接"""
         await self.db.close()

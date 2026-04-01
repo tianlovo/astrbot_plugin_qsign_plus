@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.8.1 (2026-04-01)
+
+### 修复
+- **At机器人奖励功能**: 修复 DataManager 缺少 at 奖励方法的问题
+  - 在 `DataManager` 类中添加 `record_at_reward()` 方法
+  - 在 `DataManager` 类中添加 `get_user_at_reward_count()` 方法
+  - 在 `DataManager` 类中添加 `get_user_at_reward_total()` 方法
+  - 这些方法代理到 `QsignDatabase` 类的对应方法
+
 ## v2.8.0 (2026-04-01)
 
 ### 新增
