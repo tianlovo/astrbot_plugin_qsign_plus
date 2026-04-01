@@ -28,7 +28,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.7.2",
+    "2.7.3",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -630,7 +630,7 @@ class ContractSystem(Star):
                 if not self._query_states[group_id]:
                     del self._query_states[group_id]
 
-    @filter.regex(r"^(存款|存钱)\s+([0-9.]+)$")
+    @filter.regex(r"^(存款|存钱)\s*([0-9.]+)$")
     async def deposit(self, event: AstrMessageEvent):
         if not is_at_bot(event):
             return
@@ -642,7 +642,7 @@ class ContractSystem(Star):
 
         # Parse amount from message
         message_str = event.message_str
-        match = __import__("re").match(r"^(存款|存钱)\s+([0-9.]+)$", message_str)
+        match = __import__("re").match(r"^(存款|存钱)\s*([0-9.]+)$", message_str)
         if not match:
             await send_text_reply(event, "金额格式不正确，请使用：存款 <数字>")
             return
@@ -673,7 +673,7 @@ class ContractSystem(Star):
 
         await send_text_reply(event, f"成功存入 {amount:.1f} 金币到银行。")
 
-    @filter.regex(r"^(取款|取钱)\s+([0-9.]+)$")
+    @filter.regex(r"^(取款|取钱)\s*([0-9.]+)$")
     async def withdraw(self, event: AstrMessageEvent):
         if not is_at_bot(event):
             return
@@ -685,7 +685,7 @@ class ContractSystem(Star):
 
         # Parse amount from message
         message_str = event.message_str
-        match = __import__("re").match(r"^(取款|取钱)\s+([0-9.]+)$", message_str)
+        match = __import__("re").match(r"^(取款|取钱)\s*([0-9.]+)$", message_str)
         if not match:
             await send_text_reply(event, "金额格式不正确，请使用：取款 <数字>")
             return
