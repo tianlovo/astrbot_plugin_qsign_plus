@@ -64,8 +64,10 @@ class ContractSystem(Star):
             while not self.data_manager.is_db_initialized():
                 await asyncio.sleep(0.5)
 
-            redeem_config = self.config.get("redeem_codes", {})
-            redeem_codes = redeem_config.get("redeem_code", [])
+            # template_list 类型返回的是列表
+            redeem_codes = self.config.get("redeem_codes", [])
+            if not isinstance(redeem_codes, list):
+                redeem_codes = []
             await self.data_manager.sync_redeem_codes_from_config(redeem_codes)
         except Exception as e:
             logger.error(f"同步兑换码配置失败: {e}")
