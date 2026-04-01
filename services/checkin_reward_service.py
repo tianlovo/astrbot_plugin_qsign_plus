@@ -9,12 +9,12 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import Any
 
+import astrbot.api.message_components as Comp
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from astrbot.api import logger
 
 from ..core.data_manager import DataManager
-from ..utils.message_utils import send_text_reply
 
 
 class CheckinRewardService:
@@ -56,6 +56,9 @@ class CheckinRewardService:
         self._current_date: str = ""
         self._daily_checkin_count: dict[str, int] = {}  # {group_id: count}
         self._processed_checkins: dict[str, set] = {}  # {group_id: {user_id}}
+        self._first_batch_sent: dict[
+            str, bool
+        ] = {}  # {group_id: bool} 是否已发送首次批次通知
 
     async def start(self) -> None:
         """启动打卡奖励服务"""
@@ -67,6 +70,7 @@ class CheckinRewardService:
         self._current_date = datetime.now().strftime("%Y-%m-%d")
         self._daily_checkin_count = {}
         self._processed_checkins = {}
+        self._first_batch_sent = {}
 
         # 添加轮询任务
         self.scheduler.add_job(
@@ -127,6 +131,7 @@ class CheckinRewardService:
         self._current_date = new_date
         self._daily_checkin_count = {}
         self._processed_checkins = {}
+        self._first_batch_sent = {}
         logger.info(f"[CheckinReward] 新的一天，数据已重置: {new_date}")
 
     async def _get_all_groups(self) -> list[str]:
@@ -156,6 +161,8 @@ class CheckinRewardService:
                 self._processed_checkins[group_id] = set()
             if group_id not in self._daily_checkin_count:
                 self._daily_checkin_count[group_id] = 0
+            if group_id not in self._first_batch_sent:
+                self._first_batch_sent[group_id] = False
 
             # 处理新打卡成员
             new_checkins = []
@@ -168,6 +175,9 @@ class CheckinRewardService:
 
             # 按打卡时间排序
             new_checkins.sort(key=lambda x: x[1])
+
+            # 判断是否是当天的首次打卡批次
+            is_first_batch = self._daily_checkin_count[group_id] == 0
 
             # 处理每个新打卡成员
             rewarded_users = []
@@ -184,7 +194,9 @@ class CheckinRewardService:
 
             # 发送通知
             if rewarded_users and self.bot_instance:
-                await self._send_reward_notification(group_id, rewarded_users)
+                await self._send_reward_notification(
+                    group_id, rewarded_users, is_first_batch
+                )
 
         except Exception as e:
             logger.error(f"[CheckinReward] 处理群组 {group_id} 打卡数据失败: {e}")
@@ -239,6 +251,7 @@ class CheckinRewardService:
         Returns:
             奖励金额
         """
+        # 只有第1~3名有额外奖励
         if rank == 1:
             return self.base_reward + self.first_extra
         elif rank == 2:
@@ -246,7 +259,7 @@ class CheckinRewardService:
         elif rank == 3:
             return self.base_reward * 0.6 + self.third_extra
         else:
-            # 第4名及以后递减，最低50%
+            # 第4名及以后递减，最低50%，没有额外奖励
             decay = min(0.5, (rank - 1) * self.decay_rate)
             return self.base_reward * max(0.5, 1 - decay)
 
@@ -305,13 +318,17 @@ class CheckinRewardService:
             logger.error(f"[CheckinReward] 记录打卡失败: {e}")
 
     async def _send_reward_notification(
-        self, group_id: str, rewarded_users: list[tuple[str, int, float]]
+        self,
+        group_id: str,
+        rewarded_users: list[tuple[str, int, float]],
+        is_first_batch: bool,
     ) -> None:
         """发送奖励通知
 
         Args:
             group_id: 群ID
             rewarded_users: [(user_id, rank, reward), ...] 列表
+            is_first_batch: 是否是当天的首次打卡批次
         """
         try:
             if not rewarded_users:
@@ -320,24 +337,31 @@ class CheckinRewardService:
             # 获取前3名用户信息
             top3_users = rewarded_users[:3]
 
-            # 构建消息
-            message_parts = ["恭喜 "]
+            # 构建消息链
+            message_chain = []
 
-            # 添加前3名的 @
+            # 如果是首次批次，添加额外恭喜消息
+            if is_first_batch and not self._first_batch_sent.get(group_id, False):
+                message_chain.append(Comp.Plain("🎉 今日首批打卡成员出现！\n\n"))
+                self._first_batch_sent[group_id] = True
+
+            # 添加恭喜文字
+            message_chain.append(Comp.Plain("恭喜 "))
+
+            # 添加前3名的 @（使用 Comp.At 组件）
             for i, (user_id, rank, reward) in enumerate(top3_users):
-                # 使用 CQ 码 @用户
-                message_parts.append(f"[CQ:at,qq={user_id}]")
+                message_chain.append(Comp.At(qq=user_id))
                 if i < len(top3_users) - 1:
-                    message_parts.append(" ")
+                    message_chain.append(Comp.Plain(" "))
 
             # 如果有更多人，添加"等等"
             if len(rewarded_users) > 3:
-                message_parts.append(" 等等")
+                message_chain.append(Comp.Plain(" 等等"))
 
-            message_parts.append(" 完成今日打卡，奖励已到账！")
+            message_chain.append(Comp.Plain(" 完成今日打卡，奖励已到账！"))
 
             # 添加详细信息
-            message_parts.append("\n\n【本批次打卡详情】\n")
+            message_chain.append(Comp.Plain("\n\n【本批次打卡详情】\n"))
             for user_id, rank, reward in rewarded_users:
                 medal = (
                     "🥇"
@@ -348,16 +372,29 @@ class CheckinRewardService:
                     if rank == 3
                     else "🏅"
                 )
-                message_parts.append(f"{medal} 第{rank}名: +{reward:.1f}金币\n")
-
-            message = "".join(message_parts)
+                # 只有前3名显示额外奖励信息
+                if rank <= 3:
+                    extra = ""
+                    if rank == 1:
+                        extra = f" (含第1名额外{self.first_extra:.0f})"
+                    elif rank == 2:
+                        extra = f" (含第2名额外{self.second_extra:.0f})"
+                    elif rank == 3:
+                        extra = f" (含第3名额外{self.third_extra:.0f})"
+                    message_chain.append(
+                        Comp.Plain(f"{medal} 第{rank}名: +{reward:.1f}金币{extra}\n")
+                    )
+                else:
+                    message_chain.append(
+                        Comp.Plain(f"{medal} 第{rank}名: +{reward:.1f}金币\n")
+                    )
 
             # 发送群消息
             if self.bot_instance:
                 await self.bot_instance.api.call_action(
                     "send_group_msg",
                     group_id=int(group_id),
-                    message=message,
+                    message=message_chain,
                 )
                 logger.info(f"[CheckinReward] 已发送奖励通知到群 {group_id}")
 
