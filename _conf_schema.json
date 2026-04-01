@@ -92,5 +92,48 @@
         "hint": "关闭时群主不可被购买，开启时群主可被购买（仍享受价格加成）。"
       }
     }
+  },
+  "at_reward": {
+    "description": "At机器人奖励配置",
+    "type": "object",
+    "hint": "用户at机器人时随机获得金币奖励的配置",
+    "items": {
+      "enable_at_reward": {
+        "type": "bool",
+        "description": "是否启用at机器人奖励",
+        "default": true,
+        "hint": "开启后，用户at机器人有概率获得随机金币奖励。"
+      },
+      "at_reward_probability": {
+        "type": "float",
+        "description": "获得奖励的概率",
+        "default": 0.3,
+        "hint": "0-1之间的小数，例如0.3代表30%的概率获得奖励。"
+      },
+      "at_reward_min": {
+        "type": "float",
+        "description": "最小奖励金额",
+        "default": 1.0,
+        "hint": "每次at获得奖励时的最小金币数。"
+      },
+      "at_reward_max": {
+        "type": "float",
+        "description": "最大奖励金额",
+        "default": 10.0,
+        "hint": "每次at获得奖励时的最大金币数。"
+      },
+      "at_reward_daily_limit": {
+        "type": "int",
+        "description": "每日奖励上限次数",
+        "default": 5,
+        "hint": "每个成员每天最多获得奖励的次数。"
+      },
+      "at_reward_timezone": {
+        "type": "string",
+        "description": "时区设置",
+        "default": "Asia/Shanghai",
+        "hint": "用于每日奖励次数重置的时区。常用时区：Asia/Shanghai（中国）、Asia/Tokyo（日本）、America/New_York（美国东部）、Europe/London（伦敦）。"
+      }
+    }
   }
 }

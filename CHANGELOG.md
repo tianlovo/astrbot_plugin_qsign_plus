@@ -1,5 +1,24 @@
 # Changelog
 
+## v2.8.0 (2026-04-01)
+
+### 新增
+- **At机器人随机金币奖励**: 用户at机器人有概率获得随机金币奖励
+  - 新增 `at_reward` 配置组，包含以下配置项：
+    - `enable_at_reward`: 是否启用at奖励功能（默认true）
+    - `at_reward_probability`: 获得奖励的概率，0-1之间（默认0.3）
+    - `at_reward_min`: 最小奖励金额（默认1.0）
+    - `at_reward_max`: 最大奖励金额（默认10.0）
+    - `at_reward_daily_limit`: 每日奖励上限次数（默认5）
+    - `at_reward_timezone`: 时区设置（默认Asia/Shanghai）
+  - 新增 `on_at_bot()` 方法监听群消息中的at事件
+  - 使用 `event.is_at_or_wake_command` 检测at机器人
+  - 概率判定成功后发放随机范围内的金币奖励
+  - 每个成员每日有奖励次数上限，达到上限后静默处理
+  - 奖励消息包含获得金额、今日次数和累计获得金额
+  - 新增 `at_reward_records` 数据库表记录奖励数据
+  - 新增 `record_at_reward()`、`get_user_at_reward_count()`、`get_user_at_reward_total()` 数据库方法
+
 ## v2.7.4 (2026-04-01)
 
 ### 移除

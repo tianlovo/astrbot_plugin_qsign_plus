@@ -130,6 +130,20 @@ class QsignDatabase:
                 )
             """)
 
+            # 创建at奖励记录表
+            await self._conn.execute("""
+                CREATE TABLE IF NOT EXISTS at_reward_records (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    group_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    reward_date TEXT NOT NULL,
+                    reward_count INTEGER DEFAULT 0,
+                    reward_total REAL DEFAULT 0,
+                    updated_at INTEGER NOT NULL,
+                    UNIQUE(group_id, user_id, reward_date)
+                )
+            """)
+
             # 创建索引
             await self._conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_user_wealth_group
@@ -607,6 +621,124 @@ class QsignDatabase:
         except Exception as e:
             logger.error(f"[{self.plugin_name}] 数据迁移失败: {e}")
             return 0, 0, 0
+
+    async def record_at_reward(
+        self,
+        group_id: str,
+        user_id: str,
+        reward_date: str,
+        reward_amount: float,
+    ) -> bool:
+        """记录at奖励
+
+        Args:
+            group_id: 群ID
+            user_id: 用户ID
+            reward_date: 奖励日期 (YYYY-MM-DD)
+            reward_amount: 奖励金额
+
+        Returns:
+            是否成功
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            now = int(time.time())
+            await self._conn.execute(
+                """
+                INSERT INTO at_reward_records (group_id, user_id, reward_date, reward_count, reward_total, updated_at)
+                VALUES (?, ?, ?, 1, ?, ?)
+                ON CONFLICT(group_id, user_id, reward_date) DO UPDATE SET
+                reward_count = reward_count + 1,
+                reward_total = reward_total + ?,
+                updated_at = ?
+                """,
+                (
+                    str(group_id),
+                    str(user_id),
+                    reward_date,
+                    reward_amount,
+                    now,
+                    reward_amount,
+                    now,
+                ),
+            )
+            await self._conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 记录at奖励失败: {e}")
+            return False
+
+    async def get_user_at_reward_count(
+        self,
+        group_id: str,
+        user_id: str,
+        reward_date: str,
+    ) -> int:
+        """获取用户指定日期的at奖励次数
+
+        Args:
+            group_id: 群ID
+            user_id: 用户ID
+            reward_date: 奖励日期 (YYYY-MM-DD)
+
+        Returns:
+            奖励次数
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            async with self._conn.execute(
+                """
+                SELECT reward_count FROM at_reward_records
+                WHERE group_id = ? AND user_id = ? AND reward_date = ?
+                """,
+                (str(group_id), str(user_id), reward_date),
+            ) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    return row["reward_count"]
+                return 0
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 获取at奖励次数失败: {e}")
+            return 0
+
+    async def get_user_at_reward_total(
+        self,
+        group_id: str,
+        user_id: str,
+        reward_date: str,
+    ) -> float:
+        """获取用户指定日期的at奖励总金额
+
+        Args:
+            group_id: 群ID
+            user_id: 用户ID
+            reward_date: 奖励日期 (YYYY-MM-DD)
+
+        Returns:
+            奖励总金额
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            async with self._conn.execute(
+                """
+                SELECT reward_total FROM at_reward_records
+                WHERE group_id = ? AND user_id = ? AND reward_date = ?
+                """,
+                (str(group_id), str(user_id), reward_date),
+            ) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    return row["reward_total"]
+                return 0.0
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 获取at奖励总金额失败: {e}")
+            return 0.0
 
     async def close(self) -> None:
         """关闭数据库连接"""

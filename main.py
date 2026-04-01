@@ -28,7 +28,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.7.4",
+    "2.8.0",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -715,6 +715,86 @@ class ContractSystem(Star):
         await self.data_manager.save_user_data(group_id, user_id, user_data)
 
         await send_text_reply(event, f"成功取出 {amount:.1f} 金币。")
+
+    @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
+    async def on_at_bot(self, event: AstrMessageEvent):
+        """监听at机器人事件，随机发放金币奖励"""
+        # 检查是否是at机器人
+        if (
+            not hasattr(event, "is_at_or_wake_command")
+            or not event.is_at_or_wake_command
+        ):
+            return
+
+        # 获取at奖励配置
+        at_reward_config = self.config.get("at_reward", {})
+        enable_at_reward = at_reward_config.get("enable_at_reward", True)
+
+        if not enable_at_reward:
+            return
+
+        group_id = str(event.message_obj.group_id)
+        basic_config = self.config.get("basic", {})
+        if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
+            return
+
+        user_id = str(event.get_sender_id())
+
+        # 获取时区配置
+        timezone_str = at_reward_config.get("at_reward_timezone", "Asia/Shanghai")
+        try:
+            tz = pytz.timezone(timezone_str)
+        except pytz.UnknownTimeZoneError:
+            tz = pytz.timezone("Asia/Shanghai")
+
+        # 获取当前日期
+        now = datetime.now(tz)
+        today = now.strftime("%Y-%m-%d")
+
+        # 检查今日奖励次数
+        daily_limit = at_reward_config.get("at_reward_daily_limit", 5)
+        reward_count = await self.data_manager.get_user_at_reward_count(
+            group_id, user_id, today
+        )
+
+        if reward_count >= daily_limit:
+            # 已达上限，静默处理
+            return
+
+        # 概率判定
+        probability = at_reward_config.get("at_reward_probability", 0.3)
+        if random.random() > probability:
+            # 未中奖，静默处理
+            return
+
+        # 计算奖励金额
+        reward_min = at_reward_config.get("at_reward_min", 1.0)
+        reward_max = at_reward_config.get("at_reward_max", 10.0)
+        reward_amount = round(random.uniform(reward_min, reward_max), 1)
+
+        # 发放奖励
+        user_data = await self.data_manager.get_user_data(group_id, user_id)
+        user_data["coins"] += reward_amount
+        await self.data_manager.save_user_data(group_id, user_id, user_data)
+
+        # 记录奖励
+        await self.data_manager.record_at_reward(
+            group_id, user_id, today, reward_amount
+        )
+
+        # 获取新的奖励次数和总金额
+        new_count = await self.data_manager.get_user_at_reward_count(
+            group_id, user_id, today
+        )
+        new_total = await self.data_manager.get_user_at_reward_total(
+            group_id, user_id, today
+        )
+
+        # 发送奖励消息
+        user_name = await self._get_user_name_from_platform(event, user_id)
+        reward_msg = f"🎉 {user_name} 获得了随机掉落的 {reward_amount:.1f} 金币！\n"
+        reward_msg += f"💰 今日at奖励: {new_count}/{daily_limit} 次，累计获得 {new_total:.1f} 金币"
+        await send_text_reply(event, reward_msg)
 
     async def terminate(self):
         """插件终止时关闭资源"""
