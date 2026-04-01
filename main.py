@@ -29,7 +29,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.8.4",
+    "2.8.5",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -749,6 +749,10 @@ class ContractSystem(Star):
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def on_at_bot(self, event: AstrMessageEvent):
         """监听at机器人事件，随机发放金币奖励"""
+        # 检查数据库是否已初始化
+        if not self.data_manager.is_db_initialized():
+            return
+
         # 检查是否是at机器人
         if (
             not hasattr(event, "is_at_or_wake_command")

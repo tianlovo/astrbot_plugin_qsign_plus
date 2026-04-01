@@ -249,6 +249,14 @@ class DataManager:
         """
         return await self.db.get_user_at_reward_total(group_id, user_id, reward_date)
 
+    def is_db_initialized(self) -> bool:
+        """检查数据库是否已初始化
+
+        Returns:
+            是否已初始化
+        """
+        return self.db._initialized
+
     async def close(self):
         """关闭数据库连接"""
         await self.db.close()
