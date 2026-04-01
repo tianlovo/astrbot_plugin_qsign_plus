@@ -148,9 +148,7 @@ class WealthSystem:
             interest,
         )
 
-    async def calculate_tomorrow_income(
-        self, user_data: dict, group_id: str
-    ) -> dict:
+    async def calculate_tomorrow_income(self, user_data: dict, group_id: str) -> dict:
         """计算明日预计收入
 
         Args:
@@ -170,7 +168,10 @@ class WealthSystem:
         tomorrow_interest = user_data["bank"] * 0.01
 
         return {
-            "total": base_with_bonus + contract_bonus + consecutive_bonus + tomorrow_interest,
+            "total": base_with_bonus
+            + contract_bonus
+            + consecutive_bonus
+            + tomorrow_interest,
             "base": base_with_bonus,
             "contract_bonus": contract_bonus,
             "consecutive_bonus": consecutive_bonus,

@@ -12,8 +12,13 @@ from .core.data_manager import DataManager
 from .core.wealth_system import WealthSystem
 from .services.card_renderer import CardRenderer
 from .services.image_cache import ImageCacheService
-from .utils.helpers import get_first_at_user, get_target_at_user, is_at_bot, is_group_allowed
-from .utils.message_utils import send_text_reply, send_image_reply
+from .utils.helpers import (
+    get_first_at_user,
+    get_target_at_user,
+    is_at_bot,
+    is_group_allowed,
+)
+from .utils.message_utils import recall_message, send_image_reply, send_text_reply
 
 PLUGIN_DIR = os.path.dirname(__file__)
 SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
@@ -23,7 +28,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.6.0",
+    "2.7.0",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -41,6 +46,9 @@ class ContractSystem(Star):
             self.wealth_system,
             self.image_cache,
         )
+
+        # Query state management: {group_id: {user_id: {"text_message_id": str, "is_generating": bool}}}
+        self._query_states: dict[str, dict[str, dict]] = {}
 
         # Load data to cache
         asyncio.create_task(self.data_manager.init())
@@ -139,7 +147,7 @@ class ContractSystem(Star):
         # 管理员和群主享受价格加成
         if target_role in ["owner", "admin"]:
             admin_bonus = admin_config.get("admin_price_bonus", 0.5)
-            base_cost *= (1 + admin_bonus)
+            base_cost *= 1 + admin_bonus
 
         total_cost = base_cost
         original_owner_id = target_data.get("contracted_by")
@@ -158,7 +166,7 @@ class ContractSystem(Star):
             if employer_data["coins"] < total_cost:
                 await send_text_reply(
                     event,
-                    f"现金不足，恶意收购需要支付 {total_cost:.1f} 金币（含{takeover_rate * 100}%额外费用）。"
+                    f"现金不足，恶意收购需要支付 {total_cost:.1f} 金币（含{takeover_rate * 100}%额外费用）。",
                 )
                 return
 
@@ -191,14 +199,13 @@ class ContractSystem(Star):
             await send_text_reply(
                 event,
                 f"恶意收购成功！您花费 {total_cost:.1f} 金币从 {original_owner_name} 手中抢走了 {target_name}。"
-                f"原雇主获得了全部转让费 {compensation:.1f} 金币。"
+                f"原雇主获得了全部转让费 {compensation:.1f} 金币。",
             )
             return
 
         if employer_data["coins"] < total_cost:
             await send_text_reply(
-                event,
-                f"现金不足，雇佣需要支付目标身价：{total_cost:.1f}金币。"
+                event, f"现金不足，雇佣需要支付目标身价：{total_cost:.1f}金币。"
             )
             return
 
@@ -213,7 +220,9 @@ class ContractSystem(Star):
         await self.data_manager.increment_purchase_count(target_id)
 
         target_name = await self._get_user_name_from_platform(event, target_id)
-        await send_text_reply(event, f"成功雇佣 {target_name}，消耗{total_cost:.1f}金币。")
+        await send_text_reply(
+            event, f"成功雇佣 {target_name}，消耗{total_cost:.1f}金币。"
+        )
 
     @filter.regex(r"^出售")
     async def sell(self, event: AstrMessageEvent):
@@ -263,8 +272,7 @@ class ContractSystem(Star):
 
         target_name = await self._get_user_name_from_platform(event, target_id)
         await send_text_reply(
-            event,
-            f"成功解雇 {target_name}，获得补偿金{sell_price:.1f}金币。"
+            event, f"成功解雇 {target_name}，获得补偿金{sell_price:.1f}金币。"
         )
 
     @filter.regex(r"^签到$")
@@ -393,7 +401,9 @@ class ContractSystem(Star):
         )
 
         if user_data["coins"] < cost:
-            await send_text_reply(event, f"金币不足，需要支付赎身费用：{cost:.1f}金币。")
+            await send_text_reply(
+                event, f"金币不足，需要支付赎身费用：{cost:.1f}金币。"
+            )
             return
 
         employer_id = user_data["contracted_by"]
@@ -419,7 +429,7 @@ class ContractSystem(Star):
         await send_text_reply(
             event,
             f"赎身成功，消耗{cost:.1f}金币，重获自由！"
-            f"原雇主 {employer_name} 获得了 {compensation:.1f} 金币作为补偿。"
+            f"原雇主 {employer_name} 获得了 {compensation:.1f} 金币作为补偿。",
         )
 
     @filter.regex(r"^(我的信息|签到查询|我的资产)$")
@@ -432,22 +442,85 @@ class ContractSystem(Star):
         if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
             return
 
-        bg_api_url = basic_config.get("bg_api_url", "https://t.alcy.cc/ycy")
-        render_data = await self.card_renderer.generate_query_card(
-            event, bg_api_url=bg_api_url
-        )
+        user_id = str(event.get_sender_id())
+
+        # Check if there's already a query in progress for this user
+        if group_id in self._query_states and user_id in self._query_states[group_id]:
+            if self._query_states[group_id][user_id].get("is_generating", False):
+                await send_text_reply(event, "正在生成您的信息卡片，请稍候...")
+                return
+
+        # Initialize query state
+        if group_id not in self._query_states:
+            self._query_states[group_id] = {}
+        self._query_states[group_id][user_id] = {"text_message_id": None, "is_generating": True}
 
         try:
-            html_url = await self.html_render(
-                self.card_renderer.get_template(), render_data
+            # Get user data for text version
+            user_data = await self.data_manager.get_user_data(group_id, user_id)
+            user_name = await self._get_user_name_from_platform(event, user_id)
+
+            # Format user info text
+            total_wealth = user_data["coins"] + user_data["bank"]
+            info_text = f"【{user_name} 的资产信息】\n"
+            info_text += f"💰 现金: {user_data['coins']:.1f} 金币\n"
+            info_text += f"🏦 银行存款: {user_data['bank']:.1f} 金币\n"
+            info_text += f"💎 总资产: {total_wealth:.1f} 金币\n"
+
+            # Add contractor info
+            if user_data["contractors"]:
+                contractor_names = []
+                for cid in user_data["contractors"]:
+                    cname = await self._get_user_name_from_platform(event, cid)
+                    contractor_names.append(cname)
+                info_text += f"👥 雇员: {', '.join(contractor_names)}\n"
+
+            if user_data["contracted_by"]:
+                owner_name = await self._get_user_name_from_platform(
+                    event, user_data["contracted_by"]
+                )
+                info_text += f"🔒 雇主: {owner_name}\n"
+
+            # Add consecutive sign-in info
+            if user_data["consecutive"] > 0:
+                info_text += f"📅 连续签到: {user_data['consecutive']} 天\n"
+
+            info_text += "\n正在生成图片卡片，请稍候..."
+
+            # Send text message and get message ID
+            text_message_id = await send_text_reply(event, info_text)
+            if text_message_id:
+                self._query_states[group_id][user_id]["text_message_id"] = text_message_id
+
+            # Generate image asynchronously
+            bg_api_url = basic_config.get("bg_api_url", "https://t.alcy.cc/ycy")
+            render_data = await self.card_renderer.generate_query_card(
+                event, bg_api_url=bg_api_url
             )
-            if html_url:
-                await send_image_reply(event, html_url)
-            else:
-                await send_text_reply(event, "查询失败，图片生成服务出现问题。")
-        except Exception as e:
-            logger.error(f"HTML 渲染失败: {e}")
-            await send_text_reply(event, "查询失败，图片生成服务出现问题。")
+
+            try:
+                html_url = await self.html_render(
+                    self.card_renderer.get_template(), render_data
+                )
+                if html_url:
+                    # Recall text message and send image
+                    if text_message_id:
+                        await recall_message(event, text_message_id)
+                    await send_image_reply(event, html_url)
+                else:
+                    # Image generation failed, text message remains
+                    logger.warning("图片生成失败，保留文字消息")
+            except Exception as e:
+                logger.error(f"HTML 渲染失败: {e}")
+                # Image generation failed, text message remains with info
+
+        finally:
+            # Clean up query state
+            if group_id in self._query_states and user_id in self._query_states[group_id]:
+                del self._query_states[group_id][user_id]
+                # Clean up empty group
+                if not self._query_states[group_id]:
+                    del self._query_states[group_id]
 
     @filter.regex(r"^(存款|存钱)\s+([0-9.]+)$")
     async def deposit(self, event: AstrMessageEvent):
@@ -479,7 +552,9 @@ class ContractSystem(Star):
         user_data = await self.data_manager.get_user_data(group_id, user_id)
 
         if amount > user_data["coins"]:
-            await send_text_reply(event, f"现金不足，当前现金：{user_data['coins']:.1f}")
+            await send_text_reply(
+                event, f"现金不足，当前现金：{user_data['coins']:.1f}"
+            )
             return
 
         user_data["coins"] -= amount
@@ -520,7 +595,9 @@ class ContractSystem(Star):
         user_data = await self.data_manager.get_user_data(group_id, user_id)
 
         if amount > user_data["bank"]:
-            await send_text_reply(event, f"银行存款不足，当前存款：{user_data['bank']:.1f}")
+            await send_text_reply(
+                event, f"银行存款不足，当前存款：{user_data['bank']:.1f}"
+            )
             return
 
         user_data["bank"] -= amount

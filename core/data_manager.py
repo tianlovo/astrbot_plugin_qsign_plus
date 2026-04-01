@@ -46,6 +46,7 @@ class DataManager:
         if os.path.exists(self.purchase_data_file):
             try:
                 import yaml
+
                 with open(self.purchase_data_file, "r", encoding="utf-8") as f:
                     purchase_data = yaml.safe_load(f) or {}
                 logger.info(f"已从YAML加载购买次数数据: {len(purchase_data)} 条")
@@ -56,6 +57,7 @@ class DataManager:
         if os.path.exists(self.data_file):
             try:
                 import yaml
+
                 with open(self.data_file, "r", encoding="utf-8") as f:
                     yaml_data = yaml.safe_load(f) or {}
             except Exception as e:
@@ -63,9 +65,11 @@ class DataManager:
 
         # Migrate data if any
         if yaml_data or purchase_data:
-            user_count, contractor_count, purchase_count = await self.db.migrate_from_yaml(
-                yaml_data, purchase_data
-            )
+            (
+                user_count,
+                contractor_count,
+                purchase_count,
+            ) = await self.db.migrate_from_yaml(yaml_data, purchase_data)
             if user_count > 0 or purchase_count > 0:
                 logger.info(
                     f"已从YAML迁移 {user_count} 个用户, "
@@ -154,7 +158,9 @@ class DataManager:
         """
         await self.db.clear_contractors(group_id, owner_id)
 
-    async def get_leaderboard(self, group_id: str, limit: int = 10) -> list[tuple[str, float]]:
+    async def get_leaderboard(
+        self, group_id: str, limit: int = 10
+    ) -> list[tuple[str, float]]:
         """获取财富排行榜
 
         Args:

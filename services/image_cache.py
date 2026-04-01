@@ -27,6 +27,7 @@ except ImportError:
 @dataclass
 class CacheEntry:
     """缓存条目元数据"""
+
     key: str
     file_path: str
     created_at: float
@@ -77,7 +78,9 @@ class ImageCacheService:
         timeout = aiohttp.ClientTimeout(total=10)
         self.session = aiohttp.ClientSession(timeout=timeout)
 
-        logger.info(f"[{plugin_name}] 图片缓存服务初始化完成，缓存目录: {self.cache_dir}")
+        logger.info(
+            f"[{plugin_name}] 图片缓存服务初始化完成，缓存目录: {self.cache_dir}"
+        )
 
     def _get_cache_dir(self) -> Path:
         """获取缓存目录路径，遵守 AstrBot 存储规范
@@ -351,7 +354,9 @@ class ImageCacheService:
                 removed += 1
 
         if removed > 0:
-            logger.info(f"[{self.plugin_name}] 过期缓存清理完成，清理了 {removed} 个文件")
+            logger.info(
+                f"[{self.plugin_name}] 过期缓存清理完成，清理了 {removed} 个文件"
+            )
 
         return removed
 
@@ -406,7 +411,9 @@ class ImageCacheService:
             base64编码的头像数据
         """
         cache_key = f"avatar_{user_id}"
-        avatar_url = f"http://q.qlogo.cn/headimg_dl?dst_uin={user_id}&spec=640&img_type=jpg"
+        avatar_url = (
+            f"http://q.qlogo.cn/headimg_dl?dst_uin={user_id}&spec=640&img_type=jpg"
+        )
 
         cached_path = await self.get_or_download(cache_key, avatar_url, "avatar")
         if cached_path:

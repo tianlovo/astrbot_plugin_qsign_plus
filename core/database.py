@@ -236,7 +236,7 @@ class QsignDatabase:
                     await self._conn.execute(
                         f"""
                         UPDATE user_wealth 
-                        SET {', '.join(fields)}, updated_at = ?
+                        SET {", ".join(fields)}, updated_at = ?
                         WHERE group_id = ? AND user_id = ?
                         """,
                         values,
@@ -538,8 +538,9 @@ class QsignDatabase:
             return False
 
     async def migrate_from_yaml(
-        self, yaml_data: dict[str, dict[str, dict]],
-        purchase_data: dict[str, int] | None = None
+        self,
+        yaml_data: dict[str, dict[str, dict]],
+        purchase_data: dict[str, int] | None = None,
     ) -> tuple[int, int, int]:
         """从YAML数据迁移到数据库
 
