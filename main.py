@@ -28,7 +28,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.7.1",
+    "2.7.2",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -312,10 +312,10 @@ class ContractSystem(Star):
         (
             earned,
             original_earned,
-            _,
-            _,
-            _,
-            _,
+            base_with_bonus,
+            contract_bonus,
+            consecutive_bonus,
+            interest,
         ) = await self.wealth_system.calculate_sign_income(
             user_data, group_id, is_penalized
         )
@@ -331,17 +331,37 @@ class ContractSystem(Star):
         enable_image_card = basic_config.get("enable_image_card", True)
 
         if not enable_image_card:
-            # Send text-only sign-in result
+            # Send text-only sign-in result with full details
             user_name = await self._get_user_name_from_platform(event, user_id)
+            wealth_level, _ = self.wealth_system.get_wealth_info(user_data)
+
             sign_text = f"【签到成功】\n"
-            sign_text += f"用户: {user_name}\n"
-            sign_text += f"获得金币: {earned:.1f}\n"
+            sign_text += f"👤 用户: {user_name}\n"
+            sign_text += f"💎 财富等级: {wealth_level}\n"
+            sign_text += f"📊 状态: {'受雇' if is_penalized else '自由'}\n"
+            sign_text += f"📅 签到时间: {now.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            sign_text += f"🔥 连续签到: {user_data['consecutive']} 天\n\n"
+
+            sign_text += f"【今日收益明细】\n"
+            sign_text += f"💵 基础收益: {base_with_bonus:.1f} 金币\n"
+            if contract_bonus > 0:
+                sign_text += f"👥 雇员加成: {contract_bonus:.1f} 金币\n"
+            if consecutive_bonus > 0:
+                sign_text += f"🔥 连续签到加成: {consecutive_bonus:.1f} 金币\n"
+            sign_text += f"🏦 银行利息: {interest:.1f} 金币\n"
+            sign_text += f"📊 小计: {original_earned:.1f} 金币\n"
             if is_penalized:
-                sign_text += f"(原应得: {original_earned:.1f}, 被雇佣惩罚后)\n"
-            sign_text += f"连续签到: {user_data['consecutive']} 天\n"
+                sign_text += f"⚠️ 受雇惩罚后: {earned:.1f} 金币\n"
+            sign_text += f"✅ 今日总收益: {earned:.1f} 金币\n\n"
+
+            sign_text += f"【资产状况】\n"
             sign_text += f"💰 现金: {user_data['coins']:.1f} 金币\n"
             sign_text += f"🏦 银行存款: {user_data['bank']:.1f} 金币\n"
-            sign_text += f"💎 总资产: {user_data['coins'] + user_data['bank']:.1f} 金币"
+            sign_text += (
+                f"💎 总资产: {user_data['coins'] + user_data['bank']:.1f} 金币\n\n"
+            )
+
+            sign_text += f"👥 雇员数量: {len(user_data['contractors'])} 人"
             await send_text_reply(event, sign_text)
             return
 
@@ -466,16 +486,46 @@ class ContractSystem(Star):
         enable_image_card = basic_config.get("enable_image_card", True)
 
         if not enable_image_card:
-            # Send text-only query result
+            # Send text-only query result with full details
             user_data = await self.data_manager.get_user_data(group_id, user_id)
             user_name = await self._get_user_name_from_platform(event, user_id)
+            wealth_level, _ = self.wealth_system.get_wealth_info(user_data)
+
+            from datetime import datetime
+
+            now = datetime.now(SHANGHAI_TZ)
+
+            # Calculate tomorrow income
+            income_info = await self.wealth_system.calculate_tomorrow_income(
+                user_data, group_id
+            )
 
             # Format user info text
             total_wealth = user_data["coins"] + user_data["bank"]
             info_text = f"【{user_name} 的资产信息】\n"
+            info_text += f"👤 用户ID: {user_id}\n"
+            info_text += f"💎 财富等级: {wealth_level}\n"
+            info_text += (
+                f"📊 状态: {'受雇' if user_data['contracted_by'] else '自由'}\n"
+            )
+            info_text += f"📅 查询时间: {now.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+
+            info_text += f"【资产状况】\n"
             info_text += f"💰 现金: {user_data['coins']:.1f} 金币\n"
             info_text += f"🏦 银行存款: {user_data['bank']:.1f} 金币\n"
             info_text += f"💎 总资产: {total_wealth:.1f} 金币\n"
+            info_text += f"🔥 连续签到: {user_data['consecutive']} 天\n\n"
+
+            info_text += f"【明日预计收入】\n"
+            info_text += f"💵 基础收益: {income_info['base']:.1f} 金币\n"
+            if income_info["contract_bonus"] > 0:
+                info_text += f"👥 雇员加成: {income_info['contract_bonus']:.1f} 金币\n"
+            if income_info["consecutive_bonus"] > 0:
+                info_text += (
+                    f"🔥 连续签到加成: {income_info['consecutive_bonus']:.1f} 金币\n"
+                )
+            info_text += f"🏦 银行利息: {income_info['interest']:.1f} 金币\n"
+            info_text += f"📊 明日预计总收入: {income_info['total']:.1f} 金币\n\n"
 
             # Add contractor info
             if user_data["contractors"]:
@@ -483,17 +533,13 @@ class ContractSystem(Star):
                 for cid in user_data["contractors"]:
                     cname = await self._get_user_name_from_platform(event, cid)
                     contractor_names.append(cname)
-                info_text += f"👥 雇员: {', '.join(contractor_names)}\n"
+                info_text += f"👥 雇员 ({len(user_data['contractors'])}人): {', '.join(contractor_names)}\n"
 
             if user_data["contracted_by"]:
                 owner_name = await self._get_user_name_from_platform(
                     event, user_data["contracted_by"]
                 )
-                info_text += f"🔒 雇主: {owner_name}\n"
-
-            # Add consecutive sign-in info
-            if user_data["consecutive"] > 0:
-                info_text += f"📅 连续签到: {user_data['consecutive']} 天"
+                info_text += f"🔒 雇主: {owner_name}"
 
             await send_text_reply(event, info_text)
             return
