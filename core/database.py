@@ -130,6 +130,21 @@ class QsignDatabase:
                 )
             """)
 
+            # 创建打卡记录表
+            await self._conn.execute("""
+                CREATE TABLE IF NOT EXISTS checkin_records (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    group_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    checkin_date TEXT NOT NULL,
+                    checkin_time INTEGER NOT NULL,
+                    rank INTEGER NOT NULL,
+                    reward REAL NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    UNIQUE(group_id, user_id, checkin_date)
+                )
+            """)
+
             # 创建索引
             await self._conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_user_wealth_group 
@@ -146,6 +161,10 @@ class QsignDatabase:
             await self._conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_contractors_contractor 
                 ON user_contractors(group_id, contractor_id)
+            """)
+            await self._conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_checkin_records_group_date
+                ON checkin_records(group_id, checkin_date)
             """)
 
             await self._conn.commit()
@@ -607,6 +626,135 @@ class QsignDatabase:
         except Exception as e:
             logger.error(f"[{self.plugin_name}] 数据迁移失败: {e}")
             return 0, 0, 0
+
+    async def record_checkin(
+        self,
+        group_id: str,
+        user_id: str,
+        checkin_date: str,
+        rank: int,
+        reward: float,
+    ) -> bool:
+        """记录打卡记录
+
+        Args:
+            group_id: 群ID
+            user_id: 用户ID
+            checkin_date: 打卡日期 (YYYY-MM-DD)
+            rank: 打卡排名
+            reward: 奖励金额
+
+        Returns:
+            是否成功
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            now = int(time.time())
+            await self._conn.execute(
+                """
+                INSERT OR REPLACE INTO checkin_records
+                (group_id, user_id, checkin_date, checkin_time, rank, reward, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(group_id),
+                    str(user_id),
+                    checkin_date,
+                    now,
+                    rank,
+                    reward,
+                    now,
+                ),
+            )
+            await self._conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 记录打卡失败: {e}")
+            return False
+
+    async def get_checkin_records(
+        self,
+        group_id: str,
+        checkin_date: str,
+    ) -> list[dict[str, Any]]:
+        """获取指定日期的打卡记录
+
+        Args:
+            group_id: 群ID
+            checkin_date: 打卡日期 (YYYY-MM-DD)
+
+        Returns:
+            打卡记录列表
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            async with self._conn.execute(
+                """
+                SELECT * FROM checkin_records
+                WHERE group_id = ? AND checkin_date = ?
+                ORDER BY rank ASC
+                """,
+                (str(group_id), checkin_date),
+            ) as cursor:
+                rows = await cursor.fetchall()
+                return [
+                    {
+                        "user_id": row["user_id"],
+                        "checkin_date": row["checkin_date"],
+                        "checkin_time": row["checkin_time"],
+                        "rank": row["rank"],
+                        "reward": row["reward"],
+                    }
+                    for row in rows
+                ]
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 获取打卡记录失败: {e}")
+            return []
+
+    async def get_user_checkin_record(
+        self,
+        group_id: str,
+        user_id: str,
+        checkin_date: str,
+    ) -> dict[str, Any] | None:
+        """获取用户指定日期的打卡记录
+
+        Args:
+            group_id: 群ID
+            user_id: 用户ID
+            checkin_date: 打卡日期 (YYYY-MM-DD)
+
+        Returns:
+            打卡记录字典，如果没有则返回 None
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            async with self._conn.execute(
+                """
+                SELECT * FROM checkin_records
+                WHERE group_id = ? AND user_id = ? AND checkin_date = ?
+                """,
+                (str(group_id), str(user_id), checkin_date),
+            ) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    return {
+                        "user_id": row["user_id"],
+                        "checkin_date": row["checkin_date"],
+                        "checkin_time": row["checkin_time"],
+                        "rank": row["rank"],
+                        "reward": row["reward"],
+                    }
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 获取用户打卡记录失败: {e}")
+
+        return None
 
     async def close(self) -> None:
         """关闭数据库连接"""

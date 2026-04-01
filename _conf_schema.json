@@ -92,5 +92,60 @@
         "hint": "关闭时群主不可被购买，开启时群主可被购买（仍享受价格加成）。"
       }
     }
+  },
+  "checkin_reward": {
+    "description": "打卡奖励配置",
+    "type": "object",
+    "hint": "群打卡奖励相关配置",
+    "items": {
+      "enable_checkin_reward": {
+        "type": "bool",
+        "description": "是否启用打卡奖励",
+        "default": true,
+        "hint": "开启后，会轮询获取群打卡数据，为打卡成员发放金币奖励。"
+      },
+      "poll_interval": {
+        "type": "float",
+        "description": "轮询间隔（秒）",
+        "default": 60,
+        "hint": "轮询群打卡数据的间隔时间，单位为秒。建议设置为60秒以上。"
+      },
+      "base_reward": {
+        "type": "float",
+        "description": "基础打卡奖励",
+        "default": 100.0,
+        "hint": "第1名打卡者获得的基础奖励金额。"
+      },
+      "first_extra_reward": {
+        "type": "float",
+        "description": "第1名额外奖励",
+        "default": 50.0,
+        "hint": "第1名打卡者额外获得的奖励金额。"
+      },
+      "second_extra_reward": {
+        "type": "float",
+        "description": "第2名额外奖励",
+        "default": 30.0,
+        "hint": "第2名打卡者额外获得的奖励金额。"
+      },
+      "third_extra_reward": {
+        "type": "float",
+        "description": "第3名额外奖励",
+        "default": 20.0,
+        "hint": "第3名打卡者额外获得的奖励金额。"
+      },
+      "decay_rate": {
+        "type": "float",
+        "description": "奖励递减系数",
+        "default": 0.1,
+        "hint": "第4名及以后，每晚一名递减10%，最低为基数的50%。"
+      },
+      "timezone": {
+        "type": "string",
+        "description": "时区设置",
+        "default": "Asia/Shanghai",
+        "hint": "打卡奖励服务使用的时区，影响每日重置时间。常用时区：Asia/Shanghai（中国）、Asia/Tokyo（日本）、America/New_York（美国东部）、Europe/London（伦敦）。"
+      }
+    }
   }
 }
