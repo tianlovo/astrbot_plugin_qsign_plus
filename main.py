@@ -896,7 +896,7 @@ class ContractSystem(Star):
         reward_msg = f"🎉 {user_name} 获得了随机掉落的 {reward_amount:.1f} {currency}！"
         await send_text_reply(event, reward_msg)
 
-    @filter.regex(r"^(兑换|兑换码)\s*(.+)$")
+    @filter.regex(r"^(兑换码|兑换)\s*(.+)$")
     async def redeem(self, event: AstrMessageEvent):
         if not is_at_bot(event):
             return
@@ -908,7 +908,7 @@ class ContractSystem(Star):
 
         # 解析兑换码
         message_str = event.message_str
-        match = __import__("re").match(r"^(兑换|兑换码)\s*(.+)$", message_str)
+        match = __import__("re").match(r"^(兑换码|兑换)\s*(.+)$", message_str)
         if not match:
             await send_text_reply(event, "兑换码格式不正确，请使用：兑换 <兑换码>")
             return
