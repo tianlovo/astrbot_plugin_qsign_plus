@@ -28,7 +28,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.8.1",
+    "2.8.2",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -739,6 +739,7 @@ class ContractSystem(Star):
             return
 
         user_id = str(event.get_sender_id())
+        user_name = await self._get_user_name_from_platform(event, user_id)
 
         # 获取时区配置
         timezone_str = at_reward_config.get("at_reward_timezone", "Asia/Shanghai")
@@ -759,18 +760,31 @@ class ContractSystem(Star):
 
         if reward_count >= daily_limit:
             # 已达上限，静默处理
+            logger.info(
+                f"[AtReward] 用户 {user_name}({user_id}) 已达到今日at奖励上限 {daily_limit} 次"
+            )
             return
 
         # 概率判定
         probability = at_reward_config.get("at_reward_probability", 0.3)
-        if random.random() > probability:
+        random_value = random.random()
+        logger.info(
+            f"[AtReward] 用户 {user_name}({user_id}) at机器人，概率判定: {random_value:.4f} / {probability:.4f}"
+        )
+
+        if random_value > probability:
             # 未中奖，静默处理
+            logger.info(f"[AtReward] 用户 {user_name}({user_id}) 未触发奖励")
             return
 
         # 计算奖励金额
         reward_min = at_reward_config.get("at_reward_min", 1.0)
         reward_max = at_reward_config.get("at_reward_max", 10.0)
         reward_amount = round(random.uniform(reward_min, reward_max), 1)
+
+        logger.info(
+            f"[AtReward] 用户 {user_name}({user_id}) 触发奖励，获得 {reward_amount:.1f} 金币"
+        )
 
         # 发放奖励
         user_data = await self.data_manager.get_user_data(group_id, user_id)
@@ -790,8 +804,11 @@ class ContractSystem(Star):
             group_id, user_id, today
         )
 
+        logger.info(
+            f"[AtReward] 用户 {user_name}({user_id}) 今日at奖励: {new_count}/{daily_limit} 次，累计 {new_total:.1f} 金币"
+        )
+
         # 发送奖励消息
-        user_name = await self._get_user_name_from_platform(event, user_id)
         reward_msg = f"🎉 {user_name} 获得了随机掉落的 {reward_amount:.1f} 金币！\n"
         reward_msg += f"💰 今日at奖励: {new_count}/{daily_limit} 次，累计获得 {new_total:.1f} 金币"
         await send_text_reply(event, reward_msg)
