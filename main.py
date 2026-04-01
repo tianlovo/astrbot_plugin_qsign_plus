@@ -28,7 +28,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.7.2",
+    "2.8.0",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -50,8 +50,38 @@ class ContractSystem(Star):
         # Query state management: {group_id: {user_id: {"text_message_id": str, "is_generating": bool}}}
         self._query_states: dict[str, dict[str, dict]] = {}
 
+        # Initialize checkin reward service
+        from .services.checkin_reward_service import CheckinRewardService
+
+        self.checkin_reward_service = CheckinRewardService(
+            self.data_manager, config, None
+        )
+
         # Load data to cache
-        asyncio.create_task(self.data_manager.init())
+        asyncio.create_task(self._initialize_services())
+
+    async def _initialize_services(self) -> None:
+        """初始化所有服务"""
+        await self.data_manager.init()
+        # 启动打卡奖励服务
+        await self.checkin_reward_service.start()
+
+    @filter.event_message_type(filter.EventMessageType.ALL, priority=999)
+    async def _capture_bot_instance(self, event: AstrMessageEvent):
+        """捕获机器人实例并更新到服务"""
+        if event.get_platform_name() == "aiocqhttp":
+            try:
+                from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
+                    AiocqhttpMessageEvent,
+                )
+
+                if isinstance(event, AiocqhttpMessageEvent):
+                    # 更新打卡奖励服务的 bot 实例
+                    if self.checkin_reward_service.bot_instance is None:
+                        self.checkin_reward_service.update_bot_instance(event.bot)
+                        logger.info("[CheckinReward] 已捕获 aiocqhttp 机器人实例")
+            except ImportError:
+                logger.warning("[CheckinReward] 无法导入 AiocqhttpMessageEvent")
 
     async def _get_user_role(self, event: AstrMessageEvent, user_id: str) -> str:
         """获取用户在群中的角色
@@ -718,6 +748,7 @@ class ContractSystem(Star):
 
     async def terminate(self):
         """插件终止时关闭资源"""
+        await self.checkin_reward_service.stop()
         await self.image_cache.close()
         await self.data_manager.close()
 

@@ -1,5 +1,26 @@
 # Changelog
 
+## v2.8.0 (2026-04-01)
+
+### 新增
+- **群打卡奖励后台服务**: 新增打卡奖励功能，激励群成员参与每日打卡
+  - 新增 `services/checkin_reward_service.py` 后台服务模块
+  - 可配置轮询时间，轮询每日群打卡数据
+  - 给打卡的人加金币，越后打的金币奖励越少
+  - 第1~第3名可额外奖励不同数量的金币
+  - 发现新的成员打卡，发送奖励到账消息
+  - 消息只at本批次打卡的前3个群友并添加"等等"标记，不at全体
+  - 打卡与签到功能完全独立
+  - 新增数据库表 `checkin_records` 存储打卡记录
+  - 新增配置组 `checkin_reward`，包含：
+    - `enable_checkin_reward`: 是否启用打卡奖励
+    - `poll_interval`: 轮询间隔（秒）
+    - `base_reward`: 基础打卡奖励
+    - `first_extra_reward`: 第1名额外奖励
+    - `second_extra_reward`: 第2名额外奖励
+    - `third_extra_reward`: 第3名额外奖励
+    - `decay_rate`: 奖励递减系数
+
 ## v2.7.2 (2026-04-01)
 
 ### 优化
