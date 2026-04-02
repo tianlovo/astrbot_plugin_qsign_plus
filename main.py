@@ -29,7 +29,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.11.2",
+    "2.11.3",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -233,6 +233,15 @@ class ContractSystem(Star):
             await send_text_reply(event, "您不能购买自己。")
             return
 
+        # 获取用户数据
+        employer_data = await self.data_manager.get_user_data(group_id, user_id)
+        target_data = await self.data_manager.get_user_data(group_id, target_id)
+
+        # 检查目标是否是用户的雇主
+        if employer_data.get("contracted_by") == target_id:
+            await send_text_reply(event, "您当前被该用户雇佣，请先赎身。")
+            return
+
         # 检查目标用户角色
         target_role = await self._get_user_role(event, target_id)
         admin_config = self.config.get("admin", {})
@@ -243,10 +252,6 @@ class ContractSystem(Star):
             if not owner_can_be_purchased:
                 await send_text_reply(event, "群主不可被购买！")
                 return
-
-        # 获取基础身价
-        employer_data = await self.data_manager.get_user_data(group_id, user_id)
-        target_data = await self.data_manager.get_user_data(group_id, target_id)
 
         # 检查雇佣数量限制
         max_contractors = self.wealth_system.get_max_contractor_limit(employer_data)

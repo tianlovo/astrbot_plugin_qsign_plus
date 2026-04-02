@@ -82,6 +82,39 @@ class WealthSystem:
                 return name, rate
         return "平民", 0.25
 
+    async def calculate_total_assets(
+        self, group_id: str, user_data: dict, user_id: str
+    ) -> float:
+        """计算总资产（包含雇员潜在价值）
+
+        Args:
+            group_id: 群ID
+            user_data: 用户数据
+            user_id: 用户ID
+
+        Returns:
+            总资产数值
+        """
+        # 基础资产：现金 + 银行存款
+        total = user_data.get("coins", 0.0) + user_data.get("bank", 0.0)
+
+        # 加上所有雇员的潜在价值
+        contractors = user_data.get("contractors", [])
+        trade_config = self.config.get("trade", {})
+        sell_return_rate = trade_config.get("sell_return_rate", 0.8)
+
+        for contractor_id in contractors:
+            contractor_data = await self.data_manager.get_user_data(
+                group_id, contractor_id
+            )
+            # 雇员潜在价值 = 雇员身价 × 出售返还率
+            contractor_value = await self.calculate_dynamic_wealth_value(
+                group_id, contractor_data, contractor_id
+            )
+            total += contractor_value * sell_return_rate
+
+        return total
+
     async def calculate_dynamic_wealth_value(
         self, group_id: str, user_data: dict, user_id: str
     ) -> float:
@@ -95,7 +128,8 @@ class WealthSystem:
         Returns:
             身价数值
         """
-        total = user_data.get("coins", 0.0) + user_data.get("bank", 0.0)
+        # 使用总资产计算身价（包含雇员潜在价值）
+        total = await self.calculate_total_assets(group_id, user_data, user_id)
         base_value = WEALTH_BASE_VALUES["平民"]
         for min_coin, name, _ in reversed(WEALTH_LEVELS):
             if total >= min_coin:
