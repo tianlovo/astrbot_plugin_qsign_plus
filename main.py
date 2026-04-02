@@ -29,7 +29,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.11.4",
+    "2.11.5",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -84,6 +84,15 @@ class ContractSystem(Star):
         """
         basic_config = self.config.get("basic", {})
         return basic_config.get("currency_name", "金币")
+
+    def _is_maintenance_mode(self) -> bool:
+        """检查是否处于维护模式
+
+        Returns:
+            是否处于维护模式
+        """
+        basic_config = self.config.get("basic", {})
+        return basic_config.get("maintenance_mode", False)
 
     async def _get_user_role(self, event: AstrMessageEvent, user_id: str) -> str:
         """获取用户在群中的角色
@@ -215,6 +224,11 @@ class ContractSystem(Star):
         group_id = str(event.message_obj.group_id)
         basic_config = self.config.get("basic", {})
         if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
+            return
+
+        # 检查维护模式
+        if self._is_maintenance_mode():
+            await send_text_reply(event, "系统维护中，暂时无法使用此功能，请稍后再试。")
             return
 
         target_id = get_target_at_user(event)
@@ -452,6 +466,11 @@ class ContractSystem(Star):
         if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
             return
 
+        # 检查维护模式
+        if self._is_maintenance_mode():
+            await send_text_reply(event, "系统维护中，暂时无法使用此功能，请稍后再试。")
+            return
+
         target_id = get_target_at_user(event)
 
         # 如果没有找到非机器人的at，尝试获取第一个at（可能是机器人）
@@ -502,6 +521,11 @@ class ContractSystem(Star):
         group_id = str(event.message_obj.group_id)
         basic_config = self.config.get("basic", {})
         if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
+            return
+
+        # 检查维护模式
+        if self._is_maintenance_mode():
+            await send_text_reply(event, "系统维护中，暂时无法使用此功能，请稍后再试。")
             return
 
         user_id = str(event.get_sender_id())
@@ -617,6 +641,11 @@ class ContractSystem(Star):
         if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
             return
 
+        # 检查维护模式
+        if self._is_maintenance_mode():
+            await send_text_reply(event, "系统维护中，暂时无法使用此功能，请稍后再试。")
+            return
+
         # Get leaderboard from database
         top_10_users = await self.data_manager.get_leaderboard(group_id, limit=10)
 
@@ -649,6 +678,11 @@ class ContractSystem(Star):
         group_id = str(event.message_obj.group_id)
         basic_config = self.config.get("basic", {})
         if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
+            return
+
+        # 检查维护模式
+        if self._is_maintenance_mode():
+            await send_text_reply(event, "系统维护中，暂时无法使用此功能，请稍后再试。")
             return
 
         user_id = str(event.get_sender_id())
@@ -917,6 +951,11 @@ class ContractSystem(Star):
         if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
             return
 
+        # 检查维护模式
+        if self._is_maintenance_mode():
+            await send_text_reply(event, "系统维护中，暂时无法使用此功能，请稍后再试。")
+            return
+
         # Parse amount from message
         message_str = event.message_str
         match = __import__("re").match(r"^(存款|存钱)\s*([0-9.]+)$", message_str)
@@ -959,6 +998,11 @@ class ContractSystem(Star):
         group_id = str(event.message_obj.group_id)
         basic_config = self.config.get("basic", {})
         if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
+            return
+
+        # 检查维护模式
+        if self._is_maintenance_mode():
+            await send_text_reply(event, "系统维护中，暂时无法使用此功能，请稍后再试。")
             return
 
         # Parse amount from message
@@ -1007,6 +1051,10 @@ class ContractSystem(Star):
             not hasattr(event, "is_at_or_wake_command")
             or not event.is_at_or_wake_command
         ):
+            return
+
+        # 维护模式下不发放AT奖励（静默处理）
+        if self._is_maintenance_mode():
             return
 
         # 获取at奖励配置
@@ -1112,6 +1160,11 @@ class ContractSystem(Star):
         group_id = str(event.message_obj.group_id)
         basic_config = self.config.get("basic", {})
         if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
+            return
+
+        # 检查维护模式
+        if self._is_maintenance_mode():
+            await send_text_reply(event, "系统维护中，暂时无法使用此功能，请稍后再试。")
             return
 
         # 解析兑换码
