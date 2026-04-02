@@ -123,6 +123,37 @@ class ContractSystem(Star):
         role = await self._get_user_role(event, user_id)
         return role in ["owner", "admin"]
 
+    async def _get_group_admin_ids(self, event: AstrMessageEvent) -> list[str]:
+        """获取群管理员列表
+
+        Args:
+            event: 消息事件
+
+        Returns:
+            管理员ID列表（包括群主和管理员）
+        """
+        admin_ids = []
+        if event.get_platform_name() == "aiocqhttp":
+            try:
+                from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
+                    AiocqhttpMessageEvent,
+                )
+
+                if isinstance(event, AiocqhttpMessageEvent):
+                    client = event.bot
+                    group_id = event.message_obj.group_id
+                    resp = await client.api.call_action(
+                        "get_group_member_list",
+                        group_id=group_id,
+                    )
+                    for member in resp:
+                        role = member.get("role", "member")
+                        if role in ["owner", "admin"]:
+                            admin_ids.append(str(member.get("user_id", "")))
+            except Exception as e:
+                logger.warning(f"获取群管理员列表失败: {e}")
+        return admin_ids
+
     @filter.regex(r"^购买")
     async def purchase(self, event: AstrMessageEvent):
         if not is_at_bot(event):
@@ -348,6 +379,9 @@ class ContractSystem(Star):
 
         is_penalized = bool(user_data["contracted_by"])
 
+        # 获取群管理员列表（用于计算管理员雇员加成）
+        admin_ids = await self._get_group_admin_ids(event)
+
         (
             earned,
             original_earned,
@@ -356,7 +390,7 @@ class ContractSystem(Star):
             consecutive_bonus,
             interest,
         ) = await self.wealth_system.calculate_sign_income(
-            user_data, group_id, is_penalized
+            user_data, group_id, is_penalized, admin_ids
         )
 
         user_data["coins"] += earned
@@ -536,9 +570,12 @@ class ContractSystem(Star):
             user_data = await self.data_manager.get_user_data(group_id, user_id)
             user_name = await self._get_user_name_from_platform(event, user_id)
 
+            # 获取群管理员列表（用于计算管理员雇员加成）
+            admin_ids = await self._get_group_admin_ids(event)
+
             # Calculate tomorrow income
             income_info = await self.wealth_system.calculate_tomorrow_income(
-                user_data, group_id
+                user_data, group_id, admin_ids
             )
 
             # Format user info text

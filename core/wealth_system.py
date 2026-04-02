@@ -119,14 +119,14 @@ class WealthSystem:
         return WEALTH_CONTRACTOR_LIMITS.get(wealth_name, 3)
 
     async def get_total_contractor_rate(
-        self, group_id: str, contractor_ids: list, employer_id: str = None
+        self, group_id: str, contractor_ids: list, admin_ids: list = None
     ) -> float:
         """计算雇员总加成率
 
         Args:
             group_id: 群ID
             contractor_ids: 雇员ID列表
-            employer_id: 雇主ID，用于获取管理员加成配置
+            admin_ids: 群管理员ID列表，用于计算管理员额外加成
 
         Returns:
             总加成率
@@ -136,6 +136,8 @@ class WealthSystem:
         rate_bonus = contract_config.get("contract_level_rate_bonus", 0.075)
         admin_bonus = contract_config.get("admin_contractor_bonus", 0.1)
         wealth_value_rate = contract_config.get("wealth_value_bonus_rate", 0.001)
+
+        admin_ids = admin_ids or []
 
         for contractor_id in contractor_ids:
             contractor_data = await self.data_manager.get_user_data(
@@ -147,8 +149,8 @@ class WealthSystem:
             # 基础加成 = 财富等级加成 + 雇佣次数加成
             contractor_rate = base_rate + (contract_level * rate_bonus)
 
-            # 管理员额外加成
-            if contractor_data.get("is_admin", False):
+            # 管理员额外加成（群管理员）
+            if contractor_id in admin_ids:
                 contractor_rate += admin_bonus
 
             # 身价加成 = 当前身价 / 1000 * 身价系数
@@ -165,6 +167,7 @@ class WealthSystem:
         user_data: dict,
         group_id: str,
         is_penalized: bool = False,
+        admin_ids: list = None,
     ) -> tuple:
         """计算签到收益
 
@@ -172,13 +175,14 @@ class WealthSystem:
             user_data: 用户数据
             group_id: 群ID
             is_penalized: 是否受雇（收益减少）
+            admin_ids: 群管理员ID列表
 
         Returns:
             (最终收益, 原始收益, 基础收益, 雇员加成, 连续签到加成, 银行利息)
         """
         _, user_base_rate = self.get_wealth_info(user_data)
         contractor_dynamic_rates = await self.get_total_contractor_rate(
-            group_id, user_data["contractors"]
+            group_id, user_data["contractors"], admin_ids
         )
 
         consecutive_bonus = 10 * (user_data["consecutive"] - 1)
@@ -204,12 +208,15 @@ class WealthSystem:
             interest,
         )
 
-    async def calculate_tomorrow_income(self, user_data: dict, group_id: str) -> dict:
+    async def calculate_tomorrow_income(
+        self, user_data: dict, group_id: str, admin_ids: list = None
+    ) -> dict:
         """计算明日预计收入
 
         Args:
             user_data: 用户数据
             group_id: 群ID
+            admin_ids: 群管理员ID列表
 
         Returns:
             收入明细字典
@@ -217,7 +224,7 @@ class WealthSystem:
         _, user_base_rate = self.get_wealth_info(user_data)
         base_with_bonus = BASE_INCOME * (1 + user_base_rate)
         contractor_dynamic_rates = await self.get_total_contractor_rate(
-            group_id, user_data["contractors"]
+            group_id, user_data["contractors"], admin_ids
         )
         contract_bonus = base_with_bonus * contractor_dynamic_rates
         consecutive_bonus = 10 * user_data["consecutive"]
