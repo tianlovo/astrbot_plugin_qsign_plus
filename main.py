@@ -29,7 +29,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.11.1",
+    "2.11.2",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -653,14 +653,30 @@ class ContractSystem(Star):
             await send_text_reply(event, "您是自由身，无需赎身。")
             return
 
-        cost = await self.wealth_system.calculate_dynamic_wealth_value(
+        # 计算当前购买价格（与价格指令相同的逻辑）
+        current_price = await self.wealth_system.calculate_dynamic_wealth_value(
             group_id, user_data, user_id
         )
+
+        # 获取目标用户角色（用于计算管理员价格加成）
+        target_role = await self._get_user_role(event, user_id)
+        admin_config = self.config.get("admin", {})
+
+        # 管理员和群主享受价格加成
+        if target_role in ["owner", "admin"]:
+            admin_bonus = admin_config.get("admin_price_bonus", 0.5)
+            current_price *= 1 + admin_bonus
+
+        # 计算赎身费用 = 当前购买价格 × 赎身费用比例
+        trade_config = self.config.get("trade", {})
+        redeem_cost_rate = trade_config.get("redeem_cost_rate", 0.5)
+        cost = current_price * redeem_cost_rate
 
         currency = self._get_currency_name()
         if user_data["coins"] < cost:
             await send_text_reply(
-                event, f"{currency}不足，需要支付赎身费用：{cost:.1f}{currency}。"
+                event,
+                f"{currency}不足，需要支付赎身费用：{cost:.1f}{currency}（当前购买价格的{redeem_cost_rate*100:.0f}%）。"
             )
             return
 
@@ -675,9 +691,9 @@ class ContractSystem(Star):
         # Save user data
         await self.data_manager.save_user_data(group_id, user_id, user_data)
 
-        trade_config = self.config.get("trade", {})
-        redeem_rate = trade_config.get("redeem_return_rate", 0.5)
-        compensation = cost * redeem_rate
+        # 计算雇主补偿 = 赎身费用 × 返还率
+        redeem_return_rate = trade_config.get("redeem_return_rate", 0.5)
+        compensation = cost * redeem_return_rate
         employer_data["coins"] += compensation
 
         # Save employer data
@@ -686,8 +702,8 @@ class ContractSystem(Star):
         employer_name = await self._get_user_name_from_platform(event, employer_id)
         await send_text_reply(
             event,
-            f"赎身成功，消耗{cost:.1f}{currency}，重获自由！"
-            f"原雇主 {employer_name} 获得了 {compensation:.1f} {currency}作为补偿。",
+            f"赎身成功，消耗{cost:.1f}{currency}（当前购买价格的{redeem_cost_rate*100:.0f}%），重获自由！\n"
+            f"原雇主 {employer_name} 获得了 {compensation:.1f} {currency}作为补偿（赎身费用的{redeem_return_rate*100:.0f}%）。",
         )
 
     @filter.regex(r"^(我的信息|签到查询|我的资产|详细信息|我的详细信息)$")
