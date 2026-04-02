@@ -29,7 +29,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.11.0",
+    "2.11.1",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -115,7 +115,7 @@ class ContractSystem(Star):
         return "member"
 
     async def _is_user_admin(self, event: AstrMessageEvent, user_id: str) -> bool:
-        """检查用户是否为群主或管理员
+        """检查用户是否为群主或管理员（缓存优先）
 
         Args:
             event: 消息事件
@@ -124,8 +124,33 @@ class ContractSystem(Star):
         Returns:
             是否为群主或管理员
         """
-        role = await self._get_user_role(event, user_id)
-        return role in ["owner", "admin"]
+        import time
+
+        group_id = str(event.message_obj.group_id)
+        now = time.time()
+
+        # 检查缓存是否有效
+        if group_id in self._admin_cache:
+            cache_entry = self._admin_cache[group_id]
+            if cache_entry["expire_time"] > now:
+                # 缓存有效，直接使用缓存判断
+                logger.debug(f"[AdminCheck] 使用缓存判断用户 {user_id} 是否为管理员")
+                return str(user_id) in cache_entry["admin_ids"]
+
+        # 缓存无效或不存在，获取管理员列表（会自动更新缓存）
+        try:
+            admin_ids = await self._get_group_admin_ids(event)
+            return str(user_id) in admin_ids
+        except Exception as e:
+            # API 调用失败，尝试使用过期缓存
+            logger.warning(f"[AdminCheck] 获取管理员列表失败: {e}")
+            if group_id in self._admin_cache:
+                logger.info(f"[AdminCheck] 使用过期缓存判断用户 {user_id}")
+                return str(user_id) in self._admin_cache[group_id]["admin_ids"]
+            # 没有缓存，回退到直接获取用户角色
+            logger.warning(f"[AdminCheck] 无可用缓存，直接获取用户角色")
+            role = await self._get_user_role(event, user_id)
+            return role in ["owner", "admin"]
 
     async def _get_group_admin_ids(self, event: AstrMessageEvent) -> list[str]:
         """获取群管理员列表（带缓存）
@@ -320,6 +345,97 @@ class ContractSystem(Star):
         await send_text_reply(
             event, f"成功雇佣 {target_name}，消耗{total_cost:.1f}{currency}。"
         )
+
+    @filter.regex(r"^价格\s*")
+    async def price(self, event: AstrMessageEvent):
+        """查询购买指定成员的价格"""
+        if not is_at_bot(event):
+            return
+
+        group_id = str(event.message_obj.group_id)
+        basic_config = self.config.get("basic", {})
+        if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
+            return
+
+        # 获取目标用户（支持at和空格可选）
+        target_id = get_target_at_user(event)
+        if not target_id:
+            target_id = get_first_at_user(event)
+
+        if not target_id:
+            await send_text_reply(event, "请使用@指定要查询价格的对象。")
+            return
+
+        user_id = str(event.get_sender_id())
+
+        # 不能查询自己
+        if target_id == user_id:
+            await send_text_reply(event, "不能查询自己的价格。")
+            return
+
+        # 获取目标用户角色
+        target_role = await self._get_user_role(event, target_id)
+        admin_config = self.config.get("admin", {})
+
+        # 检查群主是否可被购买
+        if target_role == "owner":
+            owner_can_be_purchased = admin_config.get("owner_can_be_purchased", False)
+            if not owner_can_be_purchased:
+                await send_text_reply(event, "群主不可被购买！")
+                return
+
+        # 获取用户数据
+        employer_data = await self.data_manager.get_user_data(group_id, user_id)
+        target_data = await self.data_manager.get_user_data(group_id, target_id)
+
+        # 检查是否已经是自己的雇员
+        if target_id in employer_data["contractors"]:
+            await send_text_reply(event, "该用户已经是您的雇员了。")
+            return
+
+        # 计算基础身价
+        base_cost = await self.wealth_system.calculate_dynamic_wealth_value(
+            group_id, target_data, target_id
+        )
+
+        # 管理员和群主享受价格加成
+        if target_role in ["owner", "admin"]:
+            admin_bonus = admin_config.get("admin_price_bonus", 0.5)
+            base_cost *= 1 + admin_bonus
+
+        total_cost = base_cost
+        original_owner_id = target_data.get("contracted_by")
+
+        currency = self._get_currency_name()
+        target_name = await self._get_user_name_from_platform(event, target_id)
+
+        if original_owner_id:
+            # 已被雇佣，计算恶意收购价格
+            trade_config = self.config.get("trade", {})
+            takeover_rate = trade_config.get("takeover_fee_rate", 0.1)
+            extra_cost = base_cost * takeover_rate
+            total_cost += extra_cost
+
+            original_owner_name = await self._get_user_name_from_platform(
+                event, original_owner_id
+            )
+
+            await send_text_reply(
+                event,
+                f"💰 {target_name} 的价格信息\n"
+                f"基础身价: {base_cost:.1f} {currency}\n"
+                f"当前雇主: {original_owner_name}\n"
+                f"恶意收购额外费用: {extra_cost:.1f} {currency} ({takeover_rate * 100}%)\n"
+                f"总计需要: {total_cost:.1f} {currency}"
+            )
+        else:
+            # 未被雇佣
+            await send_text_reply(
+                event,
+                f"💰 {target_name} 的价格信息\n"
+                f"身价: {total_cost:.1f} {currency}\n"
+                f"状态: 自由身，可直接雇佣"
+            )
 
     @filter.regex(r"^出售")
     async def sell(self, event: AstrMessageEvent):
