@@ -51,6 +51,10 @@ class ContractSystem(Star):
         # Query state management: {group_id: {user_id: {"text_message_id": str, "is_generating": bool}}}
         self._query_states: dict[str, dict[str, dict]] = {}
 
+        # Admin cache: {group_id: {"admin_ids": list[str], "expire_time": timestamp}}
+        self._admin_cache: dict[str, dict] = {}
+        self._admin_cache_ttl = 300  # 缓存有效期5分钟
+
         # Load data to cache
         asyncio.create_task(self.data_manager.init())
 
@@ -124,7 +128,7 @@ class ContractSystem(Star):
         return role in ["owner", "admin"]
 
     async def _get_group_admin_ids(self, event: AstrMessageEvent) -> list[str]:
-        """获取群管理员列表
+        """获取群管理员列表（带缓存）
 
         Args:
             event: 消息事件
@@ -132,6 +136,19 @@ class ContractSystem(Star):
         Returns:
             管理员ID列表（包括群主和管理员）
         """
+        import time
+
+        group_id = str(event.message_obj.group_id)
+        now = time.time()
+
+        # 检查缓存是否有效
+        if group_id in self._admin_cache:
+            cache_entry = self._admin_cache[group_id]
+            if cache_entry["expire_time"] > now:
+                logger.debug(f"[AdminCache] 使用缓存的管理员列表，群: {group_id}")
+                return cache_entry["admin_ids"]
+
+        # 缓存无效或不存在，重新获取
         admin_ids = []
         if event.get_platform_name() == "aiocqhttp":
             try:
@@ -141,17 +158,28 @@ class ContractSystem(Star):
 
                 if isinstance(event, AiocqhttpMessageEvent):
                     client = event.bot
-                    group_id = event.message_obj.group_id
                     resp = await client.api.call_action(
                         "get_group_member_list",
-                        group_id=group_id,
+                        group_id=event.message_obj.group_id,
                     )
                     for member in resp:
                         role = member.get("role", "member")
                         if role in ["owner", "admin"]:
                             admin_ids.append(str(member.get("user_id", "")))
+
+                    # 更新缓存
+                    self._admin_cache[group_id] = {
+                        "admin_ids": admin_ids,
+                        "expire_time": now + self._admin_cache_ttl,
+                    }
+                    logger.info(f"[AdminCache] 更新管理员列表缓存，群: {group_id}，管理员数: {len(admin_ids)}")
             except Exception as e:
                 logger.warning(f"获取群管理员列表失败: {e}")
+                # 如果获取失败但有缓存，使用过期缓存作为备选
+                if group_id in self._admin_cache:
+                    logger.info(f"[AdminCache] 使用过期缓存作为备选，群: {group_id}")
+                    return self._admin_cache[group_id]["admin_ids"]
+
         return admin_ids
 
     @filter.regex(r"^购买")
