@@ -202,9 +202,12 @@ class WealthSystem:
             if contractor_id in admin_ids:
                 contractor_rate += admin_bonus
 
-            # 身价加成 = 当前身价 / 1000 * 身价系数
-            contractor_wealth = contractor_data.get("coins", 0.0) + contractor_data.get("bank", 0.0)
-            wealth_bonus = contractor_wealth / 1000 * wealth_value_rate
+            # 身价加成 = 雇员总资产 / 1000 * 身价系数
+            # 总资产包含现金+银行存款+雇员潜在价值
+            contractor_total_assets = await self.calculate_total_assets(
+                group_id, contractor_data, contractor_id
+            )
+            wealth_bonus = contractor_total_assets / 1000 * wealth_value_rate
             contractor_rate += wealth_bonus
 
             total_rate += contractor_rate

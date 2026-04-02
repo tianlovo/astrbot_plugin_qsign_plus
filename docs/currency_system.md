@@ -315,11 +315,12 @@ if 雇员是群管理员:
 else:
     admin_bonus = 0
 
-# 身价加成
+# 身价加成（基于雇员总资产）
 wealth_value_rate = 0.001  # 默认系数0.001
-contractor_wealth = 雇员现金 + 雇员银行存款
-wealth_bonus = contractor_wealth / 1000 × wealth_value_rate
-# 例如：身价10000的雇员提供 10000/1000×0.001 = 0.01 = 1% 加成
+# 雇员总资产 = 现金 + 银行存款 + 雇员潜在价值（详见总资产计算章节）
+contractor_total_assets = 雇员总资产
+wealth_bonus = contractor_total_assets / 1000 × wealth_value_rate
+# 例如：总资产10000的雇员提供 10000/1000×0.001 = 0.01 = 1% 加成
 
 # 单个雇员总加成
 contractor_rate = base_rate + contract_bonus + admin_bonus + wealth_bonus
@@ -331,7 +332,7 @@ contractor_rate = base_rate + contract_bonus + admin_bonus + wealth_bonus
 - 财富等级：富豪（75%基础加成）
 - 被购买次数：2次
 - 是群管理员
-- 现金+银行存款：50,000
+- 总资产：50,000（现金+银行存款+雇员潜在价值）
 
 计算：
 ```
@@ -342,6 +343,8 @@ contractor_rate = base_rate + contract_bonus + admin_bonus + wealth_bonus
 
 总加成率 = 0.75 + 0.15 + 0.1 + 0.05 = 1.05 (105%)
 ```
+
+**注意**：身价加成现在基于雇员的总资产（包含其自身的雇员潜在价值），而非仅现金+银行存款。
 
 ### 配置参数
 
