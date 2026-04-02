@@ -77,6 +77,18 @@
         "description": "每级契约增益加成",
         "default": 0.075,
         "hint": "例如，0.075代表玩家的契约等级每提升1级，为雇主提供的收益加成额外增加7.5%。"
+      },
+      "admin_contractor_bonus": {
+        "type": "float",
+        "description": "管理员雇员额外加成",
+        "default": 0.1,
+        "hint": "例如，0.1代表每雇佣一个管理员，该雇员为雇主提供的收益加成额外增加10%。"
+      },
+      "wealth_value_bonus_rate": {
+        "type": "float",
+        "description": "身价加成系数",
+        "default": 0.001,
+        "hint": "雇员身价影响雇主收益的系数。计算公式：身价/1000*系数。例如0.001代表身价10000的雇员额外提供1%的加成。"
       }
     }
   },

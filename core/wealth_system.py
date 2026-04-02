@@ -7,19 +7,45 @@
 from astrbot.api import logger
 
 
-# 财富等级配置
+# 财富等级配置 (10个阶段)
 WEALTH_LEVELS = [
     (0, "平民", 0.25),
     (500, "小资", 0.5),
     (2000, "富豪", 0.75),
     (5000, "巨擘", 1.0),
+    (15000, "权贵", 1.25),
+    (50000, "领主", 1.5),
+    (150000, "霸主", 1.75),
+    (500000, "王者", 2.0),
+    (1500000, "传奇", 2.5),
+    (5000000, "神话", 3.0),
 ]
+
+# 每个财富阶段的可雇佣数量限制
+WEALTH_CONTRACTOR_LIMITS = {
+    "平民": 3,
+    "小资": 4,
+    "富豪": 5,
+    "巨擘": 6,
+    "权贵": 7,
+    "领主": 8,
+    "霸主": 9,
+    "王者": 10,
+    "传奇": 15,
+    "神话": -1,  # -1 表示无限制
+}
 
 WEALTH_BASE_VALUES = {
     "平民": 100.0,
     "小资": 500.0,
     "富豪": 2000.0,
     "巨擘": 5000.0,
+    "权贵": 15000.0,
+    "领主": 50000.0,
+    "霸主": 150000.0,
+    "王者": 500000.0,
+    "传奇": 1500000.0,
+    "神话": 5000000.0,
 }
 
 BASE_INCOME = 100.0
@@ -80,14 +106,27 @@ class WealthSystem:
         price_bonus = contract_config.get("contract_level_price_bonus", 0.15)
         return base_value * (1 + contract_level * price_bonus)
 
+    def get_max_contractor_limit(self, user_data: dict) -> int:
+        """获取用户最大可雇佣数量
+
+        Args:
+            user_data: 用户数据
+
+        Returns:
+            最大可雇佣数量，-1表示无限制
+        """
+        wealth_name, _ = self.get_wealth_info(user_data)
+        return WEALTH_CONTRACTOR_LIMITS.get(wealth_name, 3)
+
     async def get_total_contractor_rate(
-        self, group_id: str, contractor_ids: list
+        self, group_id: str, contractor_ids: list, employer_id: str = None
     ) -> float:
         """计算雇员总加成率
 
         Args:
             group_id: 群ID
             contractor_ids: 雇员ID列表
+            employer_id: 雇主ID，用于获取管理员加成配置
 
         Returns:
             总加成率
@@ -95,13 +134,30 @@ class WealthSystem:
         total_rate = 0.0
         contract_config = self.config.get("contract", {})
         rate_bonus = contract_config.get("contract_level_rate_bonus", 0.075)
+        admin_bonus = contract_config.get("admin_contractor_bonus", 0.1)
+        wealth_value_rate = contract_config.get("wealth_value_bonus_rate", 0.001)
+
         for contractor_id in contractor_ids:
             contractor_data = await self.data_manager.get_user_data(
                 group_id, contractor_id
             )
             _, base_rate = self.get_wealth_info(contractor_data)
             contract_level = await self.data_manager.get_purchase_count(contractor_id)
-            total_rate += base_rate + (contract_level * rate_bonus)
+
+            # 基础加成 = 财富等级加成 + 雇佣次数加成
+            contractor_rate = base_rate + (contract_level * rate_bonus)
+
+            # 管理员额外加成
+            if contractor_data.get("is_admin", False):
+                contractor_rate += admin_bonus
+
+            # 身价加成 = 当前身价 / 1000 * 身价系数
+            contractor_wealth = contractor_data.get("coins", 0.0) + contractor_data.get("bank", 0.0)
+            wealth_bonus = contractor_wealth / 1000 * wealth_value_rate
+            contractor_rate += wealth_bonus
+
+            total_rate += contractor_rate
+
         return total_rate
 
     async def calculate_sign_income(

@@ -29,7 +29,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.10.0",
+    "2.11.0",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -164,8 +164,14 @@ class ContractSystem(Star):
         employer_data = await self.data_manager.get_user_data(group_id, user_id)
         target_data = await self.data_manager.get_user_data(group_id, target_id)
 
-        if len(employer_data["contractors"]) >= 3:
-            await send_text_reply(event, "已达到最大雇佣数量（3人）。")
+        # 检查雇佣数量限制
+        max_contractors = self.wealth_system.get_max_contractor_limit(employer_data)
+        current_contractors = len(employer_data["contractors"])
+        if max_contractors > 0 and current_contractors >= max_contractors:
+            await send_text_reply(
+                event,
+                f"已达到最大雇佣数量（{current_contractors}人）。提升财富等级可增加雇佣上限。"
+            )
             return
 
         base_cost = await self.wealth_system.calculate_dynamic_wealth_value(
