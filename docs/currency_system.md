@@ -84,8 +84,8 @@ def get_wealth_info(user_data):
 sell_value = 雇员当前身价 × 出售返还率(默认0.8)
 
 # 赎身时雇主获得的钱
-redeem_cost = 雇员当前身价 × 赎身费用比例(默认0.5)
-redeem_value = redeem_cost × 赎身返还率(默认0.5)
+# 赎身费用 = 购买记录中的价格（购买时实际支付的价格）
+redeem_value = 赎身费用 × 赎身返还率(默认0.5)
 
 # 雇员潜在价值
 contractor_potential_value = max(sell_value, redeem_value)
@@ -96,7 +96,6 @@ contractor_potential_value = max(sell_value, redeem_value)
 | 配置项 | 默认值 | 说明 |
 |--------|--------|------|
 | `sell_return_rate` | 0.8 | 主动出售雇员时，可以收回其当前身价的80% |
-| `redeem_cost_rate` | 0.5 | 赎身费用占当前购买价格的比例 |
 | `redeem_return_rate` | 0.5 | 雇员赎身时，原雇主可以获得赎身费用的50% |
 
 ---
