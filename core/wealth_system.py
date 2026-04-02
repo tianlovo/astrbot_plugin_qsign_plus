@@ -87,6 +87,8 @@ class WealthSystem:
     ) -> float:
         """计算总资产（包含雇员潜在价值）
 
+        雇员的潜在价值 = 出售该雇员时能获得的钱 或 雇员赎身时雇主能获得的钱
+
         Args:
             group_id: 群ID
             user_data: 用户数据
@@ -102,16 +104,29 @@ class WealthSystem:
         contractors = user_data.get("contractors", [])
         trade_config = self.config.get("trade", {})
         sell_return_rate = trade_config.get("sell_return_rate", 0.8)
+        redeem_return_rate = trade_config.get("redeem_return_rate", 0.5)
 
         for contractor_id in contractors:
             contractor_data = await self.data_manager.get_user_data(
                 group_id, contractor_id
             )
-            # 雇员潜在价值 = 雇员身价 × 出售返还率
+            # 计算雇员当前身价（购买价格）
             contractor_value = await self.calculate_dynamic_wealth_value(
                 group_id, contractor_data, contractor_id
             )
-            total += contractor_value * sell_return_rate
+
+            # 雇员潜在价值 = max(出售获得的钱, 赎身时雇主获得的钱)
+            # 出售获得的钱 = 雇员身价 × 出售返还率
+            sell_value = contractor_value * sell_return_rate
+            # 赎身时雇主获得的钱 = 赎身费用 × 赎身返还率
+            # 赎身费用 = 当前购买价格 × 赎身费用比例
+            redeem_cost_rate = trade_config.get("redeem_cost_rate", 0.5)
+            redeem_cost = contractor_value * redeem_cost_rate
+            redeem_value = redeem_cost * redeem_return_rate
+
+            # 取两者中的较大值作为潜在价值
+            contractor_potential_value = max(sell_value, redeem_value)
+            total += contractor_potential_value
 
         return total
 
