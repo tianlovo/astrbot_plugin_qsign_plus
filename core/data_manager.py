@@ -402,6 +402,44 @@ class DataManager:
 
         logger.info(f"已从配置同步 {valid_count} 个兑换码到数据库")
 
+    async def record_purchase(
+        self,
+        group_id: str,
+        owner_id: str,
+        contractor_id: str,
+        purchase_price: float,
+    ) -> bool:
+        """记录购买历史
+
+        Args:
+            group_id: 群ID
+            owner_id: 雇主ID
+            contractor_id: 雇员ID
+            purchase_price: 购买价格
+
+        Returns:
+            是否成功
+        """
+        return await self.db.record_purchase(
+            group_id, owner_id, contractor_id, purchase_price
+        )
+
+    async def get_latest_purchase_price(
+        self,
+        group_id: str,
+        contractor_id: str,
+    ) -> float:
+        """获取雇员最新的购买价格
+
+        Args:
+            group_id: 群ID
+            contractor_id: 雇员ID
+
+        Returns:
+            最新的购买价格，如果没有记录则返回0
+        """
+        return await self.db.get_latest_purchase_price(group_id, contractor_id)
+
     async def close(self):
         """关闭数据库连接"""
         await self.db.close()

@@ -29,7 +29,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.11.5",
+    "2.11.6",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -330,6 +330,11 @@ class ContractSystem(Star):
 
             await self.data_manager.increment_purchase_count(target_id)
 
+            # 记录购买价格
+            await self.data_manager.record_purchase(
+                group_id, user_id, target_id, total_cost
+            )
+
             target_name = await self._get_user_name_from_platform(event, target_id)
             original_owner_name = await self._get_user_name_from_platform(
                 event, original_owner_id
@@ -358,6 +363,11 @@ class ContractSystem(Star):
         await self.data_manager.save_user_data(group_id, user_id, employer_data)
 
         await self.data_manager.increment_purchase_count(target_id)
+
+        # 记录购买价格
+        await self.data_manager.record_purchase(
+            group_id, user_id, target_id, total_cost
+        )
 
         target_name = await self._get_user_name_from_platform(event, target_id)
         currency = self._get_currency_name()
@@ -692,34 +702,46 @@ class ContractSystem(Star):
             await send_text_reply(event, "您是自由身，无需赎身。")
             return
 
-        # 计算当前购买价格（与价格指令相同的逻辑）
-        current_price = await self.wealth_system.calculate_dynamic_wealth_value(
-            group_id, user_data, user_id
+        employer_id = user_data["contracted_by"]
+
+        # 查询购买记录中的价格
+        purchase_price = await self.data_manager.get_latest_purchase_price(
+            group_id, user_id
         )
 
-        # 获取目标用户角色（用于计算管理员价格加成）
-        target_role = await self._get_user_role(event, user_id)
-        admin_config = self.config.get("admin", {})
+        if purchase_price <= 0:
+            # 没有购买记录（旧数据兼容），计算当前价格并记录
+            current_price = await self.wealth_system.calculate_dynamic_wealth_value(
+                group_id, user_data, user_id
+            )
 
-        # 管理员和群主享受价格加成
-        if target_role in ["owner", "admin"]:
-            admin_bonus = admin_config.get("admin_price_bonus", 0.5)
-            current_price *= 1 + admin_bonus
+            # 获取目标用户角色（用于计算管理员价格加成）
+            target_role = await self._get_user_role(event, user_id)
+            admin_config = self.config.get("admin", {})
 
-        # 计算赎身费用 = 当前购买价格 × 赎身费用比例
-        trade_config = self.config.get("trade", {})
-        redeem_cost_rate = trade_config.get("redeem_cost_rate", 0.5)
-        cost = current_price * redeem_cost_rate
+            # 管理员和群主享受价格加成
+            if target_role in ["owner", "admin"]:
+                admin_bonus = admin_config.get("admin_price_bonus", 0.5)
+                current_price *= 1 + admin_bonus
+
+            purchase_price = current_price
+
+            # 记录到购买历史（兼容旧数据）
+            await self.data_manager.record_purchase(
+                group_id, employer_id, user_id, purchase_price
+            )
+
+        # 赎身费用 = 购买价格（不再乘以比例）
+        cost = purchase_price
 
         currency = self._get_currency_name()
         if user_data["coins"] < cost:
             await send_text_reply(
                 event,
-                f"{currency}不足，需要支付赎身费用：{cost:.1f}{currency}（当前购买价格的{redeem_cost_rate*100:.0f}%）。"
+                f"{currency}不足，需要支付赎身费用：{cost:.1f}{currency}。"
             )
             return
 
-        employer_id = user_data["contracted_by"]
         employer_data = await self.data_manager.get_user_data(group_id, employer_id)
 
         user_data["coins"] -= cost
@@ -731,6 +753,7 @@ class ContractSystem(Star):
         await self.data_manager.save_user_data(group_id, user_id, user_data)
 
         # 计算雇主补偿 = 赎身费用 × 返还率
+        trade_config = self.config.get("trade", {})
         redeem_return_rate = trade_config.get("redeem_return_rate", 0.5)
         compensation = cost * redeem_return_rate
         employer_data["coins"] += compensation
@@ -741,7 +764,7 @@ class ContractSystem(Star):
         employer_name = await self._get_user_name_from_platform(event, employer_id)
         await send_text_reply(
             event,
-            f"赎身成功，消耗{cost:.1f}{currency}（当前购买价格的{redeem_cost_rate*100:.0f}%），重获自由！\n"
+            f"赎身成功，消耗{cost:.1f}{currency}，重获自由！\n"
             f"原雇主 {employer_name} 获得了 {compensation:.1f} {currency}作为补偿（赎身费用的{redeem_return_rate*100:.0f}%）。",
         )
 

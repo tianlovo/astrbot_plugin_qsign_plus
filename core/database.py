@@ -174,6 +174,18 @@ class QsignDatabase:
                 )
             """)
 
+            # 创建购买记录表
+            await self._conn.execute("""
+                CREATE TABLE IF NOT EXISTS purchase_records (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    group_id TEXT NOT NULL,
+                    owner_id TEXT NOT NULL,
+                    contractor_id TEXT NOT NULL,
+                    purchase_price REAL NOT NULL,
+                    created_at INTEGER NOT NULL
+                )
+            """)
+
             # 创建索引
             await self._conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_user_wealth_group
@@ -198,6 +210,10 @@ class QsignDatabase:
             await self._conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_redeem_records_code
                 ON user_redeem_records(code)
+            """)
+            await self._conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_purchase_records_contractor
+                ON purchase_records(group_id, contractor_id)
             """)
 
             await self._conn.commit()
@@ -1048,6 +1064,76 @@ class QsignDatabase:
         except Exception as e:
             logger.error(f"[{self.plugin_name}] 获取兑换记录失败: {e}")
             return []
+
+    async def record_purchase(
+        self,
+        group_id: str,
+        owner_id: str,
+        contractor_id: str,
+        purchase_price: float,
+    ) -> bool:
+        """记录购买历史
+
+        Args:
+            group_id: 群ID
+            owner_id: 雇主ID
+            contractor_id: 雇员ID
+            purchase_price: 购买价格
+
+        Returns:
+            是否成功
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            now = int(time.time())
+            await self._conn.execute(
+                """
+                INSERT INTO purchase_records
+                (group_id, owner_id, contractor_id, purchase_price, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (str(group_id), str(owner_id), str(contractor_id), purchase_price, now),
+            )
+            await self._conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 记录购买历史失败: {e}")
+            return False
+
+    async def get_latest_purchase_price(
+        self,
+        group_id: str,
+        contractor_id: str,
+    ) -> float:
+        """获取雇员最新的购买价格
+
+        Args:
+            group_id: 群ID
+            contractor_id: 雇员ID
+
+        Returns:
+            最新的购买价格，如果没有记录则返回0
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            async with self._conn.execute(
+                """
+                SELECT purchase_price FROM purchase_records
+                WHERE group_id = ? AND contractor_id = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (str(group_id), str(contractor_id)),
+            ) as cursor:
+                row = await cursor.fetchone()
+                return row["purchase_price"] if row else 0.0
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 获取购买价格失败: {e}")
+            return 0.0
 
     async def close(self) -> None:
         """关闭数据库连接"""
