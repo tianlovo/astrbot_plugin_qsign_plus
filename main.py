@@ -30,7 +30,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.12.11",
+    "2.12.12",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -1163,7 +1163,10 @@ class ContractSystem(Star):
         user_id = str(event.get_sender_id())
         user_data = await self.data_manager.get_user_data(group_id, user_id)
 
-        if amount > round(user_data["coins"], 1):
+        # 使用整数比较避免浮点精度问题
+        amount_int = int(amount * 10)
+        coins_int = int(user_data["coins"] * 10)
+        if amount_int > coins_int:
             await send_text_reply(
                 event, f"现金不足，当前现金：{user_data['coins']:.1f}"
             )
@@ -1215,7 +1218,10 @@ class ContractSystem(Star):
         user_id = str(event.get_sender_id())
         user_data = await self.data_manager.get_user_data(group_id, user_id)
 
-        if amount > round(user_data["bank"], 1):
+        # 使用整数比较避免浮点精度问题
+        amount_int = int(amount * 10)
+        bank_int = int(user_data["bank"] * 10)
+        if amount_int > bank_int:
             await send_text_reply(
                 event, f"银行存款不足，当前存款：{user_data['bank']:.1f}"
             )
