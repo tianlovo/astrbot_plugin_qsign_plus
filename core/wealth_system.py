@@ -82,10 +82,12 @@ class WealthSystem:
                 return name, rate
         return "平民", 0.25
 
-    async def calculate_total_assets(
+    async def calculate_wealth_value(
         self, group_id: str, user_data: dict, user_id: str
     ) -> float:
-        """计算总资产（包含雇员潜在价值）
+        """计算身价（包含雇员潜在价值）
+
+        身价 = 现金 + 银行存款 + Σ(每个雇员的潜在价值)
 
         雇员的潜在价值 = 出售该雇员时能获得的钱 或 雇员赎身时雇主能获得的钱
 
@@ -95,9 +97,9 @@ class WealthSystem:
             user_id: 用户ID
 
         Returns:
-            总资产数值
+            身价数值
         """
-        # 基础资产：现金 + 银行存款
+        # 基础身价：现金 + 银行存款
         total = user_data.get("coins", 0.0) + user_data.get("bank", 0.0)
 
         # 加上所有雇员的潜在价值
@@ -119,9 +121,13 @@ class WealthSystem:
             # 出售获得的钱 = 雇员身价 × 出售返还率
             sell_value = contractor_value * sell_return_rate
             # 赎身时雇主获得的钱 = 赎身费用 × 赎身返还率
-            # 赎身费用 = 当前购买价格 × 赎身费用比例
-            redeem_cost_rate = trade_config.get("redeem_cost_rate", 0.5)
-            redeem_cost = contractor_value * redeem_cost_rate
+            # 赎身费用 = 购买记录中的价格
+            redeem_cost = await self.data_manager.get_latest_purchase_price(
+                group_id, contractor_id
+            )
+            if redeem_cost <= 0:
+                # 如果没有购买记录，使用当前身价（兼容旧数据）
+                redeem_cost = contractor_value
             redeem_value = redeem_cost * redeem_return_rate
 
             # 取两者中的较大值作为潜在价值
@@ -143,8 +149,8 @@ class WealthSystem:
         Returns:
             身价数值
         """
-        # 使用总资产计算身价（包含雇员潜在价值）
-        total = await self.calculate_total_assets(group_id, user_data, user_id)
+        # 使用身价计算（包含雇员潜在价值）
+        total = await self.calculate_wealth_value(group_id, user_data, user_id)
         base_value = WEALTH_BASE_VALUES["平民"]
         for min_coin, name, _ in reversed(WEALTH_LEVELS):
             if total >= min_coin:
@@ -202,12 +208,12 @@ class WealthSystem:
             if contractor_id in admin_ids:
                 contractor_rate += admin_bonus
 
-            # 身价加成 = 雇员总资产 / 1000 * 身价系数
-            # 总资产包含现金+银行存款+雇员潜在价值
-            contractor_total_assets = await self.calculate_total_assets(
+            # 身价加成 = 雇员身价 / 1000 * 身价系数
+            # 身价包含现金+银行存款+雇员潜在价值
+            contractor_wealth = await self.calculate_wealth_value(
                 group_id, contractor_data, contractor_id
             )
-            wealth_bonus = contractor_total_assets / 1000 * wealth_value_rate
+            wealth_bonus = contractor_wealth / 1000 * wealth_value_rate
             contractor_rate += wealth_bonus
 
             total_rate += contractor_rate

@@ -29,7 +29,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.11.6",
+    "2.11.7",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -377,7 +377,7 @@ class ContractSystem(Star):
 
     @filter.regex(r"^价格\s*")
     async def price(self, event: AstrMessageEvent):
-        """查询购买指定成员的价格"""
+        """查询购买指定成员的价格，或查询自己的身价"""
         if not is_at_bot(event):
             return
 
@@ -386,20 +386,44 @@ class ContractSystem(Star):
         if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
             return
 
+        user_id = str(event.get_sender_id())
+
         # 获取目标用户（支持at和空格可选）
         target_id = get_target_at_user(event)
         if not target_id:
             target_id = get_first_at_user(event)
 
-        if not target_id:
-            await send_text_reply(event, "请使用@指定要查询价格的对象。")
-            return
+        currency = self._get_currency_name()
 
-        user_id = str(event.get_sender_id())
+        # 如果没有at任何人，或at自己，查询自己的身价
+        if not target_id or target_id == user_id:
+            user_data = await self.data_manager.get_user_data(group_id, user_id)
+            my_price = await self.wealth_system.calculate_dynamic_wealth_value(
+                group_id, user_data, user_id
+            )
 
-        # 不能查询自己
-        if target_id == user_id:
-            await send_text_reply(event, "不能查询自己的价格。")
+            # 获取自己的角色（用于显示管理员加成）
+            my_role = await self._get_user_role(event, user_id)
+            admin_config = self.config.get("admin", {})
+
+            # 计算显示价格（包含管理员加成）
+            display_price = my_price
+            if my_role in ["owner", "admin"]:
+                admin_bonus = admin_config.get("admin_price_bonus", 0.5)
+                display_price *= 1 + admin_bonus
+
+            role_text = ""
+            if my_role == "owner":
+                role_text = "（群主身份，身价加成）"
+            elif my_role == "admin":
+                role_text = "（管理员身份，身价加成）"
+
+            await send_text_reply(
+                event,
+                f"💰 您的身价信息{role_text}\n"
+                f"身价: {display_price:.1f} {currency}\n"
+                f"提示: 身价 = 现金 + 银行存款 + 雇员潜在价值"
+            )
             return
 
         # 获取目标用户角色
@@ -435,7 +459,6 @@ class ContractSystem(Star):
         total_cost = base_cost
         original_owner_id = target_data.get("contracted_by")
 
-        currency = self._get_currency_name()
         target_name = await self._get_user_name_from_platform(event, target_id)
 
         if original_owner_id:

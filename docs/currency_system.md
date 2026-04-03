@@ -65,14 +65,14 @@ def get_wealth_info(user_data):
 
 ---
 
-## 总资产计算
+## 身价计算
 
-总资产是计算身价和排行榜的核心指标，包含三部分：**现金 + 银行存款 + 雇员潜在价值**。
+身价是计算财富等级和排行榜的核心指标，包含三部分：**现金 + 银行存款 + 雇员潜在价值**。
 
 ### 公式
 
 ```
-总资产 = 现金 + 银行存款 + Σ(每个雇员的潜在价值)
+身价 = 现金 + 银行存款 + Σ(每个雇员的潜在价值)
 ```
 
 ### 雇员潜在价值计算
@@ -112,7 +112,7 @@ contractor_potential_value = max(sell_value, redeem_value)
 
 ### 计算步骤
 
-1. **确定基础身价**：根据当前总资产确定对应的财富等级基础身价
+1. **确定基础身价**：根据当前身价确定对应的财富等级基础身价
 2. **获取契约等级**：用户被购买的次数
 3. **计算身价加成**：每被购买一次，身价增加一定比例
 
@@ -120,10 +120,10 @@ contractor_potential_value = max(sell_value, redeem_value)
 
 ```python
 async def calculate_dynamic_wealth_value(group_id, user_data, user_id):
-    # 使用总资产计算身价（包含雇员潜在价值）
-    total = await calculate_total_assets(group_id, user_data, user_id)
+    # 使用身价计算（包含雇员潜在价值）
+    total = await calculate_wealth_value(group_id, user_data, user_id)
 
-    # 根据总资产确定基础身价
+    # 根据身价确定基础身价
     base_value = 100  # 默认平民基础身价
     for min_coin, name, _ in reversed(WEALTH_LEVELS):
         if total >= min_coin:
@@ -255,9 +255,10 @@ if target_role in ["owner", "admin"]:
 ### 赎身逻辑
 
 ```
-赎身费用 = 当前购买价格 × 赎身费用比例
+赎身费用 = 购买记录中的价格
 
-# 默认 redeem_cost_rate = 0.5，即当前价格的50%
+# 系统会查询 purchase_records 表获取该雇员被购买时的实际价格
+# 如果没有购买记录（旧数据），则计算当前价格并记录到数据库
 
 雇主获得补偿 = 赎身费用 × 赎身返还率
 
@@ -267,10 +268,26 @@ if target_role in ["owner", "admin"]:
 #### 交易流程
 
 1. 检查用户是否被雇佣
-2. 检查用户现金是否充足
-3. 扣除用户现金（赎身费用）
-4. 雇主获得补偿
-5. 移除雇佣关系
+2. 查询 `purchase_records` 表获取购买价格
+3. 如果没有购买记录，计算当前价格并记录到数据库（兼容旧数据）
+4. 检查用户现金是否充足
+5. 扣除用户现金（赎身费用）
+6. 雇主获得补偿
+7. 移除雇佣关系
+
+#### 购买记录表
+
+系统使用 `purchase_records` 表记录每次购买的历史：
+
+| 字段 | 说明 |
+|------|------|
+| group_id | 群ID |
+| owner_id | 雇主ID |
+| contractor_id | 雇员ID |
+| purchase_price | 实际支付价格（包含恶意收购费用、管理员加成等） |
+| created_at | 购买时间 |
+
+这样确保赎身费用与购买时的实际价格一致，避免身价波动导致的不公平。
 
 ### 配置参数
 
@@ -482,7 +499,6 @@ reward = random(reward_min, reward_max)  # 默认1-10金币
 | `takeover_fee_rate` | 0.1 | 恶意收购额外费用率 |
 | `sell_return_rate` | 0.8 | 主动出售返还率 |
 | `redeem_return_rate` | 0.5 | 赎身时原雇主得款率 |
-| `redeem_cost_rate` | 0.5 | 赎身费用比例 |
 
 ### 契约配置 (contract)
 
@@ -516,8 +532,11 @@ reward = random(reward_min, reward_max)  # 默认1-10金币
 
 ## 版本历史
 
+- **v2.11.6** - 修复赎身价格计算逻辑，使用购买记录价格而非实时身价
+- **v2.11.5** - 增加维护模式开关
+- **v2.11.4** - 优化雇员身价加成计算，使用总资产
 - **v2.11.3** - 修复购买/赎身逻辑，添加总资产计算（包含雇员潜在价值）
-- **v2.11.2** - 修改赎身费用计算逻辑
+- **v2.11.2** - 修改赎身费用计算方式
 - **v2.11.1** - 优化管理员检查（添加缓存机制）
 - **v2.11.0** - 扩展财富等级到10个阶段，添加管理员雇员加成和身价加成
 - **v2.10.0** - 添加兑换码系统
