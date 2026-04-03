@@ -96,7 +96,7 @@ def is_group_allowed(group_id: str, enabled_groups: list) -> bool:
 def get_plain_text_from_message(event: AstrMessageEvent) -> str:
     """从消息中提取纯文本内容（不包括At组件）
 
-    遍历消息组件链，提取所有Text组件的内容，忽略At组件。
+    遍历消息组件链，提取所有Plain组件的内容，忽略At组件。
     这样可以避免将@用户的QQ号误解析为指令参数。
 
     Args:
@@ -105,7 +105,7 @@ def get_plain_text_from_message(event: AstrMessageEvent) -> str:
     Returns:
         纯文本内容
     """
-    from astrbot.api.message_components import Text
+    from astrbot.api.message_components import Plain
 
     msg_obj = getattr(event, "message_obj", None)
     if not msg_obj:
@@ -115,7 +115,7 @@ def get_plain_text_from_message(event: AstrMessageEvent) -> str:
     text_parts = []
 
     for component in chain:
-        if isinstance(component, Text):
+        if isinstance(component, Plain):
             text_parts.append(component.text)
 
     return "".join(text_parts)
