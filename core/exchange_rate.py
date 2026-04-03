@@ -162,7 +162,7 @@ class ExchangeRateHistory:
         records = await self._db.get_exchange_rate_history(group_id, days)
         return [
             ExchangeRateRecord(
-                group_id=record["group_id"],
+                group_id=group_id,
                 rate=record["rate"],
                 recorded_at=record["recorded_at"],
             )
