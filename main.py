@@ -658,6 +658,11 @@ class ContractSystem(Star):
 
         user_id = str(event.get_sender_id())
 
+        # 检查目标是否是群主，如果是则让 sell_owner_currency 处理
+        target_role = await self._get_user_role(event, target_id)
+        if target_role == "owner":
+            return
+
         employer_data = await self.data_manager.get_user_data(group_id, user_id)
         target_data = await self.data_manager.get_user_data(group_id, target_id)
 
