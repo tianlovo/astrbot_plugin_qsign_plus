@@ -118,7 +118,7 @@ class OwnerCurrencyManager:
             )
 
         # 计算出售获得金额
-        revenue = self.calculator.calculate_sell_return(amount, rate)
+        revenue = self.calculator.calculate_sell_revenue(amount, rate)
 
         # 扣除群主货币余额
         await self.data_manager.add_owner_currency_balance(group_id, user_id, -amount)
