@@ -30,7 +30,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.12.10",
+    "2.12.11",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -1157,10 +1157,13 @@ class ContractSystem(Star):
             await send_text_reply(event, "金额格式不正确，请使用：存款 <数字>")
             return
 
+        # 限制金额精度为一位小数
+        amount = round(amount, 1)
+
         user_id = str(event.get_sender_id())
         user_data = await self.data_manager.get_user_data(group_id, user_id)
 
-        if amount > user_data["coins"] + 0.001:  # 允许微小浮点误差
+        if amount > round(user_data["coins"], 1):
             await send_text_reply(
                 event, f"现金不足，当前现金：{user_data['coins']:.1f}"
             )
@@ -1206,10 +1209,13 @@ class ContractSystem(Star):
             await send_text_reply(event, "金额格式不正确，请使用：取款 <数字>")
             return
 
+        # 限制金额精度为一位小数
+        amount = round(amount, 1)
+
         user_id = str(event.get_sender_id())
         user_data = await self.data_manager.get_user_data(group_id, user_id)
 
-        if amount > user_data["bank"] + 0.001:  # 允许微小浮点误差
+        if amount > round(user_data["bank"], 1):
             await send_text_reply(
                 event, f"银行存款不足，当前存款：{user_data['bank']:.1f}"
             )
