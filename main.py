@@ -30,7 +30,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.12.2",
+    "2.12.3",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -540,8 +540,7 @@ class ContractSystem(Star):
             await send_text_reply(
                 event,
                 f"💰 您的身价信息{role_text}\n"
-                f"身价: {display_price:.1f} {currency}\n"
-                f"提示: 身价 = 现金 + 银行存款 + 雇员潜在价值"
+                f"身价: {display_price:.1f} {currency}"
             )
             return
 
@@ -1000,7 +999,11 @@ class ContractSystem(Star):
                     info_text += f"🔒 雇主: {owner_name}"
             else:
                 # Simple info output (default)
+                # 获取财富等级
+                wealth_level, _ = self.wealth_system.get_wealth_info(user_data)
+
                 info_text = f"【{user_name} 的资产】\n"
+                info_text += f"💎 财富等级: {wealth_level}\n"
                 info_text += f"💰 现金: {user_data['coins']:.1f} {currency}\n"
                 info_text += f"🏦 银行: {user_data['bank']:.1f} {currency}\n"
                 info_text += f"💎 身价: {total_wealth:.1f} {currency}\n"
