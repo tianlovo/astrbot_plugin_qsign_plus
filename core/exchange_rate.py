@@ -351,3 +351,38 @@ class ExchangeRateHistory:
             清理的记录数量
         """
         return await self._db.cleanup_old_exchange_rates(days)
+
+    async def get_last_n_rates(
+        self, group_id: str, limit: int = 5
+    ) -> list[ExchangeRateRecord]:
+        """获取最近N条汇率记录
+
+        Args:
+            group_id: 群ID
+            limit: 返回记录数量，默认 5 条
+
+        Returns:
+            汇率记录列表，按时间倒序排列（最新的在前面）
+        """
+        records = await self._db.get_recent_exchange_rates(group_id, limit)
+        return [
+            ExchangeRateRecord(
+                group_id=group_id,
+                rate=record["rate"],
+                recorded_at=record["recorded_at"],
+            )
+            for record in records
+        ]
+
+    async def get_daily_average_rates(self, group_id: str, days: int = 7) -> list[dict]:
+        """获取最近N天每日平均汇率
+
+        Args:
+            group_id: 群ID
+            days: 查询天数，默认 7 天
+
+        Returns:
+            每日平均汇率列表，按日期倒序排列（最新的在前面）
+            每个元素包含: date(日期字符串), avg_rate(平均汇率), count(记录数)
+        """
+        return await self._db.get_daily_average_exchange_rates(group_id, days)

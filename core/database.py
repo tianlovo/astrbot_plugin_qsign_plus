@@ -1375,3 +1375,81 @@ class QsignDatabase:
         except Exception as e:
             logger.error(f"[{self.plugin_name}] 清理旧汇率记录失败: {e}")
             return False
+
+    async def get_recent_exchange_rates(
+        self, group_id: str, limit: int = 5
+    ) -> list[dict[str, Any]]:
+        """获取最近N条汇率记录
+
+        Args:
+            group_id: 群ID
+            limit: 返回记录数量，默认5条
+
+        Returns:
+            汇率记录列表，按时间倒序排列（最新的在前面）
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            async with self._conn.execute(
+                """
+                SELECT rate, recorded_at FROM exchange_rate_history
+                WHERE group_id = ?
+                ORDER BY recorded_at DESC
+                LIMIT ?
+                """,
+                (str(group_id), limit),
+            ) as cursor:
+                rows = await cursor.fetchall()
+                return [
+                    {"rate": row["rate"], "recorded_at": row["recorded_at"]}
+                    for row in rows
+                ]
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 获取最近汇率记录失败: {e}")
+            return []
+
+    async def get_daily_average_exchange_rates(
+        self, group_id: str, days: int = 7
+    ) -> list[dict[str, Any]]:
+        """获取最近N天每日平均汇率
+
+        Args:
+            group_id: 群ID
+            days: 查询天数，默认7天
+
+        Returns:
+            每日平均汇率列表，按日期倒序排列（最新的在前面）
+            每个元素包含: date(日期字符串), avg_rate(平均汇率), count(记录数)
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            cutoff_time = int(time.time()) - (days * 24 * 60 * 60)
+            async with self._conn.execute(
+                """
+                SELECT 
+                    date(recorded_at, 'unixepoch', 'localtime') as date,
+                    AVG(rate) as avg_rate,
+                    COUNT(*) as count
+                FROM exchange_rate_history
+                WHERE group_id = ? AND recorded_at >= ?
+                GROUP BY date(recorded_at, 'unixepoch', 'localtime')
+                ORDER BY date DESC
+                """,
+                (str(group_id), cutoff_time),
+            ) as cursor:
+                rows = await cursor.fetchall()
+                return [
+                    {
+                        "date": row["date"],
+                        "avg_rate": row["avg_rate"],
+                        "count": row["count"],
+                    }
+                    for row in rows
+                ]
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 获取每日平均汇率失败: {e}")
+            return []

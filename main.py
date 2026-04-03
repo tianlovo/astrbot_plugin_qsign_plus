@@ -911,8 +911,13 @@ class ContractSystem(Star):
             stock_config = self.config.get("stock_market", {})
             current_rate = stock_config.get("base_exchange_rate", 1.0)
 
-        # 获取历史汇率
-        history = await self.exchange_history.get_recent_rates(group_id, days=7)
+        # 获取最近5次汇率记录（最新在前）
+        recent_5 = await self.exchange_history.get_last_n_rates(group_id, limit=5)
+
+        # 获取最近7天每日平均汇率（最新在前）
+        daily_avg = await self.exchange_history.get_daily_average_rates(
+            group_id, days=7
+        )
 
         # 构建文字版汇率信息
         info_text = f"📊 {currency_unit} 汇率信息\n"
@@ -921,17 +926,27 @@ class ContractSystem(Star):
             f"当前汇率: 1 {currency_unit} = {current_rate:.4f} {currency_name}\n\n"
         )
 
-        if history:
-            info_text += "近7天汇率趋势:\n"
-            for record in history[-7:]:  # 显示最近7条
+        # 显示最近5次汇率
+        if recent_5:
+            info_text += "【最近5次汇率】\n"
+            for record in recent_5:
                 from datetime import datetime
 
                 date_str = datetime.fromtimestamp(record.recorded_at).strftime(
                     "%m-%d %H:%M"
                 )
                 info_text += f"  {date_str}: {record.rate:.4f}\n"
+            info_text += "\n"
         else:
-            info_text += "暂无历史汇率数据\n"
+            info_text += "暂无最近汇率数据\n\n"
+
+        # 显示最近7天每日平均汇率
+        if daily_avg:
+            info_text += "【近7天每日平均汇率】\n"
+            for record in daily_avg:
+                info_text += f"  {record['date']}: {record['avg_rate']:.4f} (共{record['count']}次)\n"
+        else:
+            info_text += "暂无每日平均汇率数据\n"
 
         info_text += f"\n{self.owner_currency_manager.DISCLAIMER}"
 
