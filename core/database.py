@@ -186,6 +186,30 @@ class QsignDatabase:
                 )
             """)
 
+            # 创建群主货币余额表
+            await self._conn.execute("""
+                CREATE TABLE IF NOT EXISTS owner_currency_balances (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    group_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    balance REAL DEFAULT 0.0,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    UNIQUE(group_id, user_id)
+                )
+            """)
+
+            # 创建汇率历史表
+            await self._conn.execute("""
+                CREATE TABLE IF NOT EXISTS exchange_rate_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    group_id TEXT NOT NULL,
+                    rate REAL NOT NULL,
+                    recorded_at INTEGER NOT NULL,
+                    created_at INTEGER NOT NULL
+                )
+            """)
+
             # 创建索引
             await self._conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_user_wealth_group
@@ -214,6 +238,14 @@ class QsignDatabase:
             await self._conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_purchase_records_contractor
                 ON purchase_records(group_id, contractor_id)
+            """)
+            await self._conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_owner_currency_group_user
+                ON owner_currency_balances(group_id, user_id)
+            """)
+            await self._conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_exchange_rate_group_time
+                ON exchange_rate_history(group_id, recorded_at)
             """)
 
             await self._conn.commit()
@@ -1051,9 +1083,7 @@ class QsignDatabase:
             logger.error(f"[{self.plugin_name}] 获取兑换码列表失败: {e}")
             return []
 
-    async def get_redeem_records_by_code(
-        self, code: str
-    ) -> list[dict[str, Any]]:
+    async def get_redeem_records_by_code(self, code: str) -> list[dict[str, Any]]:
         """获取指定兑换码的兑换记录
 
         Args:
@@ -1167,3 +1197,181 @@ class QsignDatabase:
             self._conn = None
             self._initialized = False
             logger.info(f"[{self.plugin_name}] 数据库连接已关闭")
+
+    async def get_owner_currency_balance(self, group_id: str, user_id: str) -> float:
+        """获取群主货币余额
+
+        Args:
+            group_id: 群ID
+            user_id: 用户ID
+
+        Returns:
+            群主货币余额，如果不存在则返回 0.0
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            async with self._conn.execute(
+                """
+                SELECT balance FROM owner_currency_balances
+                WHERE group_id = ? AND user_id = ?
+                """,
+                (str(group_id), str(user_id)),
+            ) as cursor:
+                row = await cursor.fetchone()
+                return row["balance"] if row else 0.0
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 获取群主货币余额失败: {e}")
+            return 0.0
+
+    async def update_owner_currency_balance(
+        self, group_id: str, user_id: str, balance: float
+    ) -> bool:
+        """更新群主货币余额
+
+        Args:
+            group_id: 群ID
+            user_id: 用户ID
+            balance: 新的余额
+
+        Returns:
+            是否更新成功
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            now = int(time.time())
+            await self._conn.execute(
+                """
+                INSERT INTO owner_currency_balances (group_id, user_id, balance, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(group_id, user_id) DO UPDATE SET
+                balance = ?,
+                updated_at = ?
+                """,
+                (str(group_id), str(user_id), balance, now, now, balance, now),
+            )
+            await self._conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 更新群主货币余额失败: {e}")
+            return False
+
+    async def record_exchange_rate(self, group_id: str, rate: float) -> bool:
+        """记录汇率
+
+        Args:
+            group_id: 群ID
+            rate: 汇率值
+
+        Returns:
+            是否记录成功
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            now = int(time.time())
+            await self._conn.execute(
+                """
+                INSERT INTO exchange_rate_history (group_id, rate, recorded_at, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (str(group_id), rate, now, now),
+            )
+            await self._conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 记录汇率失败: {e}")
+            return False
+
+    async def get_exchange_rate_history(
+        self, group_id: str, days: int = 7
+    ) -> list[dict[str, Any]]:
+        """获取汇率历史
+
+        Args:
+            group_id: 群ID
+            days: 查询天数，默认7天
+
+        Returns:
+            汇率历史记录列表
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            cutoff_time = int(time.time()) - (days * 24 * 60 * 60)
+            async with self._conn.execute(
+                """
+                SELECT rate, recorded_at FROM exchange_rate_history
+                WHERE group_id = ? AND recorded_at >= ?
+                ORDER BY recorded_at DESC
+                """,
+                (str(group_id), cutoff_time),
+            ) as cursor:
+                rows = await cursor.fetchall()
+                return [
+                    {"rate": row["rate"], "recorded_at": row["recorded_at"]}
+                    for row in rows
+                ]
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 获取汇率历史失败: {e}")
+            return []
+
+    async def get_current_exchange_rate(self, group_id: str) -> float | None:
+        """获取当前汇率
+
+        Args:
+            group_id: 群ID
+
+        Returns:
+            最新汇率值，如果没有记录则返回 None
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            async with self._conn.execute(
+                """
+                SELECT rate FROM exchange_rate_history
+                WHERE group_id = ?
+                ORDER BY recorded_at DESC
+                LIMIT 1
+                """,
+                (str(group_id),),
+            ) as cursor:
+                row = await cursor.fetchone()
+                return row["rate"] if row else None
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 获取当前汇率失败: {e}")
+            return None
+
+    async def cleanup_old_exchange_rates(self, days: int = 30) -> bool:
+        """清理旧汇率记录
+
+        Args:
+            days: 保留天数，默认30天
+
+        Returns:
+            是否清理成功
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            cutoff_time = int(time.time()) - (days * 24 * 60 * 60)
+            await self._conn.execute(
+                """
+                DELETE FROM exchange_rate_history
+                WHERE recorded_at < ?
+                """,
+                (cutoff_time,),
+            )
+            await self._conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 清理旧汇率记录失败: {e}")
+            return False

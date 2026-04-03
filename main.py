@@ -10,8 +10,10 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
 
 from .core.data_manager import DataManager
-from .core.wealth_system import WealthSystem
+from .core.exchange_rate import ExchangeRateCalculator, ExchangeRateHistory
+from .core.owner_currency import OwnerCurrencyManager
 from .core.wealth_calculator import WealthCalculator
+from .core.wealth_system import WealthSystem
 from .services.card_renderer import CardRenderer
 from .services.image_cache import ImageCacheService
 from .utils.helpers import (
@@ -30,7 +32,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.12.12",
+    "2.14.0",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -63,6 +65,21 @@ class ContractSystem(Star):
         # 同步兑换码配置到数据库
         asyncio.create_task(self._sync_redeem_codes())
 
+        # 初始化股市系统
+        stock_config = config.get("stock_market", {})
+        self.exchange_calculator = ExchangeRateCalculator(
+            volatility=stock_config.get("volatility", 0.02),
+            mean_reversion_speed=stock_config.get("mean_reversion_speed", 0.1),
+            mean_reversion_level=stock_config.get("mean_reversion_level", 1.0),
+        )
+        self.exchange_history = ExchangeRateHistory(db=self.data_manager.db)
+        self.owner_currency_manager = OwnerCurrencyManager(
+            self.data_manager, self.exchange_calculator
+        )
+
+        # 启动汇率定时更新任务
+        self._start_exchange_rate_task()
+
     async def _sync_redeem_codes(self):
         """同步兑换码配置到数据库"""
         try:
@@ -77,6 +94,39 @@ class ContractSystem(Star):
             await self.data_manager.sync_redeem_codes_from_config(redeem_codes)
         except Exception as e:
             logger.error(f"同步兑换码配置失败: {e}")
+
+    def _start_exchange_rate_task(self):
+        """启动汇率定时更新任务"""
+
+        async def update_exchange_rate():
+            while True:
+                try:
+                    stock_config = self.config.get("stock_market", {})
+                    interval = stock_config.get("update_interval_minutes", 60)
+                    await asyncio.sleep(interval * 60)
+
+                    # 获取所有启用的群组
+                    basic_config = self.config.get("basic", {})
+                    enabled_groups = basic_config.get("enabled_groups", [])
+
+                    for group_id in enabled_groups:
+                        current_rate = await self.exchange_history.get_current_rate(
+                            group_id
+                        )
+                        if current_rate is None:
+                            current_rate = stock_config.get("base_exchange_rate", 1.0)
+
+                        next_rate = self.exchange_calculator.calculate_next_rate(
+                            current_rate
+                        )
+                        await self.exchange_history.record_rate(group_id, next_rate)
+                        logger.info(
+                            f"群 {group_id} 汇率已更新: {current_rate:.4f} -> {next_rate:.4f}"
+                        )
+                except Exception as e:
+                    logger.error(f"汇率更新任务出错: {e}")
+
+        asyncio.create_task(update_exchange_rate())
 
     def _get_currency_name(self) -> str:
         """获取货币名称
@@ -159,7 +209,7 @@ class ContractSystem(Star):
                 logger.info(f"[AdminCheck] 使用过期缓存判断用户 {user_id}")
                 return str(user_id) in self._admin_cache[group_id]["admin_ids"]
             # 没有缓存，回退到直接获取用户角色
-            logger.warning(f"[AdminCheck] 无可用缓存，直接获取用户角色")
+            logger.warning("[AdminCheck] 无可用缓存，直接获取用户角色")
             role = await self._get_user_role(event, user_id)
             return role in ["owner", "admin"]
 
@@ -208,7 +258,9 @@ class ContractSystem(Star):
                         "admin_ids": admin_ids,
                         "expire_time": now + self._admin_cache_ttl,
                     }
-                    logger.info(f"[AdminCache] 更新管理员列表缓存，群: {group_id}，管理员数: {len(admin_ids)}")
+                    logger.info(
+                        f"[AdminCache] 更新管理员列表缓存，群: {group_id}，管理员数: {len(admin_ids)}"
+                    )
             except Exception as e:
                 logger.warning(f"获取群管理员列表失败: {e}")
                 # 如果获取失败但有缓存，使用过期缓存作为备选
@@ -260,14 +312,11 @@ class ContractSystem(Star):
 
         # 检查目标用户角色
         target_role = await self._get_user_role(event, target_id)
-        admin_config = self.config.get("admin", {})
 
-        # 群主默认不可被购买（除非配置允许）
+        # 群主不可被雇佣，请通过股市系统交易群主货币
         if target_role == "owner":
-            owner_can_be_purchased = admin_config.get("owner_can_be_purchased", False)
-            if not owner_can_be_purchased:
-                await send_text_reply(event, "群主不可被购买！")
-                return
+            await send_text_reply(event, "群主不可被雇佣，请通过股市系统交易群主货币。")
+            return
 
         # 检查雇佣数量限制
         max_contractors = await self.wealth_system.get_max_contractor_limit(
@@ -277,7 +326,7 @@ class ContractSystem(Star):
         if max_contractors > 0 and current_contractors >= max_contractors:
             await send_text_reply(
                 event,
-                f"已达到最大雇佣数量（{current_contractors}人）。提升财富等级可增加雇佣上限。"
+                f"已达到最大雇佣数量（{current_contractors}人）。提升财富等级可增加雇佣上限。",
             )
             return
 
@@ -406,14 +455,11 @@ class ContractSystem(Star):
 
         # 获取目标用户角色
         target_role = await self._get_user_role(event, target_id)
-        admin_config = self.config.get("admin", {})
 
-        # 检查群主是否可被购买
+        # 群主不可被雇佣，请通过股市系统交易群主货币
         if target_role == "owner":
-            owner_can_be_purchased = admin_config.get("owner_can_be_purchased", False)
-            if not owner_can_be_purchased:
-                await send_text_reply(event, "群主不可被购买！")
-                return
+            await send_text_reply(event, "群主不可被雇佣，请通过股市系统交易群主货币。")
+            return
 
         # 获取目标用户数据
         target_data = await self.data_manager.get_user_data(group_id, target_id)
@@ -447,23 +493,27 @@ class ContractSystem(Star):
         info_text += f"  基础身价(现金+银行): {wealth_detailed['base_wealth']:.1f} {currency}\n\n"
 
         # 雇员潜在价值详细拆解
-        if wealth_detailed['contractor_count'] > 0:
+        if wealth_detailed["contractor_count"] > 0:
             info_text += f"  雇员数量: {wealth_detailed['contractor_count']} 人\n"
             info_text += f"  雇员总潜在价值: {wealth_detailed['total_contractor_value']:.1f} {currency}\n\n"
 
             info_text += "  每个雇员的潜在价值:\n"
-            for i, contractor in enumerate(wealth_detailed['contractor_details'], 1):
+            for i, contractor in enumerate(wealth_detailed["contractor_details"], 1):
                 contractor_name = await self._get_user_name_from_platform(
-                    event, contractor['contractor_id']
+                    event, contractor["contractor_id"]
                 )
                 info_text += f"    {i}. {contractor_name}\n"
                 info_text += f"       当前身价: {contractor['contractor_value']:.1f} {currency}\n"
-                info_text += f"       出售获得: {contractor['sell_value']:.1f} {currency} "
-                info_text += f"({contractor['contractor_value']:.1f} × {contractor['sell_return_rate']*100:.0f}%)\n"
-                info_text += f"       赎身返还: {contractor['redeem_value']:.1f} {currency} "
-                info_text += f"({contractor['purchase_price']:.1f} × {contractor['redeem_return_rate']*100:.0f}%)\n"
+                info_text += (
+                    f"       出售获得: {contractor['sell_value']:.1f} {currency} "
+                )
+                info_text += f"({contractor['contractor_value']:.1f} × {contractor['sell_return_rate'] * 100:.0f}%)\n"
+                info_text += (
+                    f"       赎身返还: {contractor['redeem_value']:.1f} {currency} "
+                )
+                info_text += f"({contractor['purchase_price']:.1f} × {contractor['redeem_return_rate'] * 100:.0f}%)\n"
                 info_text += f"       → 潜在价值: {contractor['potential_value']:.1f} {currency} "
-                info_text += f"(max(出售, 赎身))\n\n"
+                info_text += "(max(出售, 赎身))\n\n"
         else:
             info_text += "  雇员数量: 0 人\n\n"
 
@@ -478,23 +528,29 @@ class ContractSystem(Star):
         info_text += f"  契约等级: {price_detailed['contract_level']}\n\n"
 
         info_text += f"  1. 当前身价: {price_detailed['wealth_value']:.1f} {currency}\n"
-        info_text += f"  2. 契约加成: +{price_detailed['contract_level']} × {price_detailed['price_bonus_rate']*100:.0f}%\n"
-        info_text += f"  3. 动态身价: {price_detailed['dynamic_wealth']:.1f} {currency}\n"
+        info_text += f"  2. 契约加成: +{price_detailed['contract_level']} × {price_detailed['price_bonus_rate'] * 100:.0f}%\n"
+        info_text += (
+            f"  3. 动态身价: {price_detailed['dynamic_wealth']:.1f} {currency}\n"
+        )
         info_text += f"     ({price_detailed['wealth_value']:.1f} × (1 + {price_detailed['contract_level']} × {price_detailed['price_bonus_rate']:.2f}))\n\n"
 
         info_text += "【价格调整】\n"
-        if price_detailed['min_price_applied']:
+        if price_detailed["min_price_applied"]:
             info_text += f"  4. 最低价格限制: {price_detailed['min_purchase_price']:.1f} {currency}\n"
             info_text += f"     (动态身价 {price_detailed['dynamic_wealth']:.1f} 低于最低价格，已调整)\n"
         else:
-            info_text += f"  4. 最低价格限制: 未触发\n"
+            info_text += "  4. 最低价格限制: 未触发\n"
             info_text += f"     (动态身价 {price_detailed['dynamic_wealth']:.1f} >= 最低价格 {price_detailed['min_purchase_price']:.1f})\n"
 
-        if price_detailed['admin_bonus_applied']:
-            info_text += f"  5. 管理员加成: +{price_detailed['admin_bonus_rate']*100:.0f}%\n"
-            info_text += f"     (+{price_detailed['admin_bonus_amount']:.1f} {currency})\n"
+        if price_detailed["admin_bonus_applied"]:
+            info_text += (
+                f"  5. 管理员加成: +{price_detailed['admin_bonus_rate'] * 100:.0f}%\n"
+            )
+            info_text += (
+                f"     (+{price_detailed['admin_bonus_amount']:.1f} {currency})\n"
+            )
         else:
-            info_text += f"  5. 管理员加成: 无\n"
+            info_text += "  5. 管理员加成: 无\n"
 
         info_text += "\n" + "=" * 40 + "\n"
         info_text += f"【最终购买价格】{price_detailed['final_price']:.1f} {currency}\n"
@@ -541,21 +597,17 @@ class ContractSystem(Star):
 
             await send_text_reply(
                 event,
-                f"💰 您的身价信息{role_text}\n"
-                f"身价: {display_price:.1f} {currency}"
+                f"💰 您的身价信息{role_text}\n身价: {display_price:.1f} {currency}",
             )
             return
 
         # 获取目标用户角色
         target_role = await self._get_user_role(event, target_id)
-        admin_config = self.config.get("admin", {})
 
-        # 检查群主是否可被购买
+        # 群主不可被雇佣，请通过股市系统交易群主货币
         if target_role == "owner":
-            owner_can_be_purchased = admin_config.get("owner_can_be_purchased", False)
-            if not owner_can_be_purchased:
-                await send_text_reply(event, "群主不可被购买！")
-                return
+            await send_text_reply(event, "群主不可被雇佣，请通过股市系统交易群主货币。")
+            return
 
         # 获取用户数据
         employer_data = await self.data_manager.get_user_data(group_id, user_id)
@@ -593,7 +645,7 @@ class ContractSystem(Star):
                 f"基础身价: {base_cost:.1f} {currency}\n"
                 f"当前雇主: {original_owner_name}\n"
                 f"恶意收购额外费用: {extra_cost:.1f} {currency} ({takeover_rate * 100}%)\n"
-                f"总计需要: {total_cost:.1f} {currency}"
+                f"总计需要: {total_cost:.1f} {currency}",
             )
         else:
             # 未被雇佣
@@ -601,7 +653,7 @@ class ContractSystem(Star):
                 event,
                 f"💰 {target_name} 的价格信息\n"
                 f"身价: {total_cost:.1f} {currency}\n"
-                f"状态: 自由身，可直接雇佣"
+                f"状态: 自由身，可直接雇佣",
             )
 
     @filter.regex(r"^出售")
@@ -661,6 +713,229 @@ class ContractSystem(Star):
         await send_text_reply(
             event, f"成功解雇 {target_name}，获得补偿金{sell_price:.1f}{currency}。"
         )
+
+    @filter.regex(r"^购买")
+    async def buy_owner_currency(self, event: AstrMessageEvent):
+        """购买群主货币"""
+        if not is_at_bot(event):
+            return
+
+        group_id = str(event.message_obj.group_id)
+        basic_config = self.config.get("basic", {})
+        if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
+            return
+
+        # 检查维护模式
+        if self._is_maintenance_mode():
+            await send_text_reply(event, "系统维护中，暂时无法使用此功能，请稍后再试。")
+            return
+
+        # 获取目标用户（群主）
+        target_id = get_target_at_user(event) or get_first_at_user(event)
+        if not target_id:
+            await send_text_reply(event, "请使用@指定要购买的群主。")
+            return
+
+        user_id = str(event.get_sender_id())
+
+        # 检查目标是否是群主
+        target_role = await self._get_user_role(event, target_id)
+        if target_role != "owner":
+            await send_text_reply(event, "只能购买群主的货币！")
+            return
+
+        # 解析数量（支持忽略空格，限制一位小数）
+        message_text = event.message_str
+        # 移除"购买"和@部分，提取数量
+        import re
+
+        amount_match = re.search(r"购买.*?\s*([\d.]+)", message_text.replace(" ", ""))
+        if not amount_match:
+            await send_text_reply(event, "请指定购买数量，例如：购买 @群主 10.5")
+            return
+
+        try:
+            amount = float(amount_match.group(1))
+            amount = round(amount, 1)
+            if amount <= 0:
+                await send_text_reply(event, "购买数量必须大于0。")
+                return
+        except ValueError:
+            await send_text_reply(event, "无效的购买数量。")
+            return
+
+        # 获取当前汇率
+        stock_config = self.config.get("stock_market", {})
+        current_rate = await self.exchange_history.get_current_rate(group_id)
+        if current_rate is None:
+            current_rate = stock_config.get("base_exchange_rate", 1.0)
+            await self.exchange_history.record_rate(group_id, current_rate)
+
+        # 执行购买
+        (
+            success,
+            message,
+            actual_amount,
+        ) = await self.owner_currency_manager.buy_currency(
+            group_id, user_id, amount, current_rate
+        )
+
+        if success:
+            # 获取群主昵称
+            owner_name = await self._get_user_name_from_platform(event, target_id)
+            currency_name = self._get_currency_name()
+            currency_unit = self.owner_currency_manager.format_currency_name(owner_name)
+            cost = self.exchange_calculator.calculate_buy_cost(amount, current_rate)
+
+            await send_text_reply(
+                event,
+                f"购买成功！您花费 {cost:.1f} {currency_name} 购买了 {actual_amount:.1f} {currency_unit}\n"
+                f"当前汇率: 1 {currency_unit} = {current_rate:.4f} {currency_name}",
+            )
+        else:
+            await send_text_reply(event, message)
+
+    @filter.regex(r"^出售")
+    async def sell_owner_currency(self, event: AstrMessageEvent):
+        """出售群主货币"""
+        if not is_at_bot(event):
+            return
+
+        group_id = str(event.message_obj.group_id)
+        basic_config = self.config.get("basic", {})
+        if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
+            return
+
+        # 检查维护模式
+        if self._is_maintenance_mode():
+            await send_text_reply(event, "系统维护中，暂时无法使用此功能，请稍后再试。")
+            return
+
+        # 获取目标用户（群主）
+        target_id = get_target_at_user(event) or get_first_at_user(event)
+        if not target_id:
+            await send_text_reply(event, "请使用@指定要出售的群主。")
+            return
+
+        user_id = str(event.get_sender_id())
+
+        # 检查目标是否是群主
+        target_role = await self._get_user_role(event, target_id)
+        if target_role != "owner":
+            await send_text_reply(event, "只能出售群主的货币！")
+            return
+
+        # 解析数量
+        import re
+
+        message_text = event.message_str
+        amount_match = re.search(r"出售.*?\s*([\d.]+)", message_text.replace(" ", ""))
+        if not amount_match:
+            await send_text_reply(event, "请指定出售数量，例如：出售 @群主 10.5")
+            return
+
+        try:
+            amount = float(amount_match.group(1))
+            amount = round(amount, 1)
+            if amount <= 0:
+                await send_text_reply(event, "出售数量必须大于0。")
+                return
+        except ValueError:
+            await send_text_reply(event, "无效的出售数量。")
+            return
+
+        # 获取当前汇率
+        current_rate = await self.exchange_history.get_current_rate(group_id)
+        if current_rate is None:
+            stock_config = self.config.get("stock_market", {})
+            current_rate = stock_config.get("base_exchange_rate", 1.0)
+
+        # 执行出售
+        success, message, revenue = await self.owner_currency_manager.sell_currency(
+            group_id, user_id, amount, current_rate
+        )
+
+        if success:
+            owner_name = await self._get_user_name_from_platform(event, target_id)
+            currency_name = self._get_currency_name()
+            currency_unit = self.owner_currency_manager.format_currency_name(owner_name)
+
+            await send_text_reply(
+                event,
+                f"出售成功！您出售了 {amount:.1f} {currency_unit}，获得 {revenue:.1f} {currency_name}\n"
+                f"当前汇率: 1 {currency_unit} = {current_rate:.4f} {currency_name}",
+            )
+        else:
+            await send_text_reply(event, message)
+
+    @filter.regex(r"^汇率")
+    async def query_exchange_rate(self, event: AstrMessageEvent):
+        """查询汇率历史和当前汇率"""
+        if not is_at_bot(event):
+            return
+
+        group_id = str(event.message_obj.group_id)
+        basic_config = self.config.get("basic", {})
+        if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
+            return
+
+        # 获取群主信息
+        owner_id = None
+        if event.get_platform_name() == "aiocqhttp":
+            try:
+                from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
+                    AiocqhttpMessageEvent,
+                )
+
+                if isinstance(event, AiocqhttpMessageEvent):
+                    client = event.bot
+                    resp = await client.api.call_action(
+                        "get_group_member_list",
+                        group_id=event.message_obj.group_id,
+                    )
+                    for member in resp:
+                        if member.get("role") == "owner":
+                            owner_id = str(member.get("user_id"))
+                            break
+            except Exception as e:
+                logger.warning(f"获取群主信息失败: {e}")
+
+        owner_name = "群主"
+        if owner_id:
+            owner_name = await self._get_user_name_from_platform(event, owner_id)
+
+        currency_name = self._get_currency_name()
+        currency_unit = self.owner_currency_manager.format_currency_name(owner_name)
+
+        # 获取当前汇率
+        current_rate = await self.exchange_history.get_current_rate(group_id)
+        if current_rate is None:
+            stock_config = self.config.get("stock_market", {})
+            current_rate = stock_config.get("base_exchange_rate", 1.0)
+
+        # 获取历史汇率
+        history = await self.exchange_history.get_recent_rates(group_id, days=7)
+
+        # 构建文字版汇率信息
+        info_text = f"📊 {currency_unit} 汇率信息\n"
+        info_text += "=" * 30 + "\n\n"
+        info_text += (
+            f"当前汇率: 1 {currency_unit} = {current_rate:.4f} {currency_name}\n\n"
+        )
+
+        if history:
+            info_text += "近7天汇率趋势:\n"
+            for record in history[-7:]:  # 显示最近7条
+                from datetime import datetime
+
+                date_str = datetime.fromtimestamp(record["recorded_at"]).strftime(
+                    "%m-%d %H:%M"
+                )
+                info_text += f"  {date_str}: {record['rate']:.4f}\n"
+        else:
+            info_text += "暂无历史汇率数据\n"
+
+        await send_text_reply(event, info_text)
 
     @filter.regex(r"^签到$")
     async def sign_in(self, event: AstrMessageEvent):
@@ -756,7 +1031,9 @@ class ContractSystem(Star):
             sign_text += "【资产状况】\n"
             sign_text += f"💰 现金: {user_data['coins']:.1f} {currency}\n"
             sign_text += f"🏦 银行存款: {user_data['bank']:.1f} {currency}\n"
-            sign_text += f"💎 身价: {user_data['coins'] + user_data['bank']:.1f} {currency}\n\n"
+            sign_text += (
+                f"💎 身价: {user_data['coins'] + user_data['bank']:.1f} {currency}\n\n"
+            )
 
             sign_text += f"👥 雇员数量: {len(user_data['contractors'])} 人"
             await send_text_reply(event, sign_text)
@@ -886,8 +1163,7 @@ class ContractSystem(Star):
         currency = self._get_currency_name()
         if user_data["coins"] < cost:
             await send_text_reply(
-                event,
-                f"{currency}不足，需要支付赎身费用：{cost:.1f}{currency}。"
+                event, f"{currency}不足，需要支付赎身费用：{cost:.1f}{currency}。"
             )
             return
 
@@ -914,8 +1190,36 @@ class ContractSystem(Star):
         await send_text_reply(
             event,
             f"赎身成功，消耗{cost:.1f}{currency}，重获自由！\n"
-            f"原雇主 {employer_name} 获得了 {compensation:.1f} {currency}作为补偿（赎身费用的{redeem_return_rate*100:.0f}%）。",
+            f"原雇主 {employer_name} 获得了 {compensation:.1f} {currency}作为补偿（赎身费用的{redeem_return_rate * 100:.0f}%）。",
         )
+
+    async def _get_group_owner_id(self, event: AstrMessageEvent) -> str | None:
+        """获取群群主ID
+
+        Args:
+            event: 消息事件
+
+        Returns:
+            群主ID，如果获取失败则返回 None
+        """
+        if event.get_platform_name() == "aiocqhttp":
+            try:
+                from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
+                    AiocqhttpMessageEvent,
+                )
+
+                if isinstance(event, AiocqhttpMessageEvent):
+                    client = event.bot
+                    resp = await client.api.call_action(
+                        "get_group_member_list",
+                        group_id=event.message_obj.group_id,
+                    )
+                    for member in resp:
+                        if member.get("role") == "owner":
+                            return str(member.get("user_id", ""))
+            except Exception as e:
+                logger.warning(f"获取群群主ID失败: {e}")
+        return None
 
     @filter.regex(r"^(我的信息|签到查询|我的资产|详细信息|我的详细信息)$")
     async def sign_query(self, event: AstrMessageEvent):
@@ -935,6 +1239,16 @@ class ContractSystem(Star):
 
         # Check if image card is enabled
         enable_image_card = basic_config.get("enable_image_card", True)
+
+        # 获取群主信息
+        owner_id = await self._get_group_owner_id(event)
+        owner_name = ""
+        owner_currency_balance = 0.0
+        if owner_id:
+            owner_name = await self._get_user_name_from_platform(event, owner_id)
+            owner_currency_balance = (
+                await self.data_manager.db.get_owner_currency_balance(group_id, user_id)
+            )
 
         if not enable_image_card:
             # Send text-only query result
@@ -977,6 +1291,8 @@ class ContractSystem(Star):
                 info_text += f"💰 现金: {user_data['coins']:.1f} {currency}\n"
                 info_text += f"🏦 银行存款: {user_data['bank']:.1f} {currency}\n"
                 info_text += f"💎 身价: {total_wealth:.1f} {currency}\n"
+                if owner_name:
+                    info_text += f"👑 {owner_name}币: {owner_currency_balance:.1f}\n"
                 info_text += f"🔥 连续签到: {user_data['consecutive']} 天\n\n"
 
                 info_text += "【明日预计收入】\n"
@@ -1017,6 +1333,8 @@ class ContractSystem(Star):
                 info_text += f"💰 现金: {user_data['coins']:.1f} {currency}\n"
                 info_text += f"🏦 银行: {user_data['bank']:.1f} {currency}\n"
                 info_text += f"💎 身价: {total_wealth:.1f} {currency}\n"
+                if owner_name:
+                    info_text += f"👑 {owner_name}币: {owner_currency_balance:.1f}\n"
 
                 # Add contractor info
                 if user_data.get("contractors"):
@@ -1388,8 +1706,7 @@ class ContractSystem(Star):
         currency = self._get_currency_name()
         if success:
             await send_text_reply(
-                event,
-                f"🎉 兑换成功！您获得了 {reward_amount:.1f} {currency}！"
+                event, f"🎉 兑换成功！您获得了 {reward_amount:.1f} {currency}！"
             )
         else:
             await send_text_reply(event, f"❌ {message}")

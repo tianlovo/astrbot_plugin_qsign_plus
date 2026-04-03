@@ -322,7 +322,9 @@ class DataManager:
         # 检查群限制
         enabled_groups_str = redeem_code.get("enabled_groups", "")
         if enabled_groups_str:
-            enabled_groups = [g.strip() for g in enabled_groups_str.split(",") if g.strip()]
+            enabled_groups = [
+                g.strip() for g in enabled_groups_str.split(",") if g.strip()
+            ]
             if enabled_groups and str(group_id) not in enabled_groups:
                 return False, "该兑换码在当前群不可用", 0.0
 
@@ -397,7 +399,9 @@ class DataManager:
                     expire_time = ""
 
             # 将群列表转换为逗号分隔的字符串
-            enabled_groups_str = ",".join(str(g) for g in enabled_groups) if enabled_groups else ""
+            enabled_groups_str = (
+                ",".join(str(g) for g in enabled_groups) if enabled_groups else ""
+            )
 
             # 保存到数据库（保留已使用次数）
             await self.db.save_redeem_code(

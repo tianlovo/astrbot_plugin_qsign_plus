@@ -102,7 +102,9 @@ class WealthSystem:
         Returns:
             身价数值
         """
-        return await self.calculator.calculate_wealth_value(group_id, user_data, user_id)
+        return await self.calculator.calculate_wealth_value(
+            group_id, user_data, user_id
+        )
 
     async def calculate_dynamic_wealth_value(
         self, group_id: str, user_data: dict, user_id: str
@@ -117,7 +119,9 @@ class WealthSystem:
         Returns:
             身价数值
         """
-        return await self.calculator.calculate_dynamic_wealth_value(group_id, user_data, user_id)
+        return await self.calculator.calculate_dynamic_wealth_value(
+            group_id, user_data, user_id
+        )
 
     async def get_max_contractor_limit(
         self, group_id: str, user_data: dict, user_id: str
@@ -149,7 +153,9 @@ class WealthSystem:
         Returns:
             总加成率
         """
-        return await self.calculator.get_total_contractor_rate(group_id, contractor_ids, admin_ids)
+        return await self.calculator.get_total_contractor_rate(
+            group_id, contractor_ids, admin_ids
+        )
 
     async def calculate_sign_income(
         self,

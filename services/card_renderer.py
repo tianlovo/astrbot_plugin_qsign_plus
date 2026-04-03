@@ -76,6 +76,40 @@ class CardRenderer:
         """
         return self.image_cache.file_to_base64(file_path)
 
+    async def _get_group_owner_info(
+        self, event: AstrMessageEvent
+    ) -> tuple[str | None, str]:
+        """获取群群主信息
+
+        Args:
+            event: 消息事件
+
+        Returns:
+            (群主ID, 群主昵称) 元组，如果获取失败则返回 (None, "")
+        """
+        if event.get_platform_name() == "aiocqhttp":
+            try:
+                from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
+                    AiocqhttpMessageEvent,
+                )
+
+                if isinstance(event, AiocqhttpMessageEvent):
+                    client = event.bot
+                    resp = await client.api.call_action(
+                        "get_group_member_list",
+                        group_id=event.message_obj.group_id,
+                    )
+                    for member in resp:
+                        if member.get("role") == "owner":
+                            owner_id = str(member.get("user_id", ""))
+                            owner_name = member.get("card") or member.get(
+                                "nickname", f"用户{owner_id[-4:]}"
+                            )
+                            return owner_id, owner_name
+            except Exception as e:
+                logger.warning(f"获取群群主信息失败: {e}")
+        return None, ""
+
     async def prepare_render_data(
         self,
         event: AstrMessageEvent,
@@ -120,6 +154,16 @@ class CardRenderer:
             group_id, user_data, user_id
         )
 
+        # 获取群主信息
+        owner_id, owner_name = await self._get_group_owner_info(event)
+        owner_currency_balance = 0.0
+        owner_currency_name = ""
+        if owner_id:
+            owner_currency_balance = (
+                await self.data_manager.db.get_owner_currency_balance(group_id, user_id)
+            )
+            owner_currency_name = f"{owner_name}币"
+
         render_data = {
             "font_path": font_path,
             "bg_image_data": bg_image_data,
@@ -138,6 +182,8 @@ class CardRenderer:
             "is_penalized": is_penalized,
             "original_earned": original_earned,
             "currency_name": self.config.get("basic", {}).get("currency_name", "金币"),
+            "owner_currency_balance": owner_currency_balance,
+            "owner_currency_name": owner_currency_name,
         }
 
         if is_query:

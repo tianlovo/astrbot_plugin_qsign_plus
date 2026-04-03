@@ -114,12 +114,6 @@
         "description": "管理员价格加成比例",
         "default": 0.5,
         "hint": "例如，0.5代表管理员身价加成50%，管理员可被购买但价格更高。"
-      },
-      "owner_can_be_purchased": {
-        "type": "bool",
-        "description": "群主是否可被购买",
-        "default": false,
-        "hint": "关闭时群主不可被购买，开启时群主可被购买（仍享受价格加成）。"
       }
     }
   },
@@ -163,6 +157,49 @@
         "description": "时区设置",
         "default": "Asia/Shanghai",
         "hint": "用于每日奖励次数重置的时区。常用时区：Asia/Shanghai（中国）、Asia/Tokyo（日本）、America/New_York（美国东部）、Europe/London（伦敦）。"
+      }
+    }
+  },
+  "stock_market": {
+    "description": "股市配置",
+    "type": "object",
+    "hint": "汇率市场相关配置，模拟股票市场波动",
+    "items": {
+      "base_exchange_rate": {
+        "type": "number",
+        "description": "基准汇率",
+        "default": 1.0,
+        "hint": "1群主货币 = X 货币"
+      },
+      "volatility": {
+        "type": "number",
+        "description": "波动率",
+        "default": 0.02,
+        "hint": "几何布朗运动波动率参数"
+      },
+      "mean_reversion_speed": {
+        "type": "number",
+        "description": "均值回归速度",
+        "default": 0.1,
+        "hint": "均值回归速度参数"
+      },
+      "mean_reversion_level": {
+        "type": "number",
+        "description": "均值回归水平",
+        "default": 1.0,
+        "hint": "长期均衡汇率"
+      },
+      "update_interval_minutes": {
+        "type": "integer",
+        "description": "更新间隔",
+        "default": 60,
+        "hint": "汇率更新间隔（分钟）"
+      },
+      "history_days": {
+        "type": "integer",
+        "description": "历史天数",
+        "default": 7,
+        "hint": "汇率历史保存天数"
       }
     }
   },

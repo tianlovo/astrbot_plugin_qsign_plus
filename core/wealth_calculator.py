@@ -149,7 +149,7 @@ class WealthCalculator:
 
             # 雇员潜在价值 = max(出售获得的钱, 赎身时雇主获得的钱)
             sell_value = contractor_value * sell_return_rate
-            
+
             # 赎身费用 = 购买记录中的价格
             redeem_cost = await self.data_manager.get_latest_purchase_price(
                 group_id, contractor_id
@@ -200,7 +200,7 @@ class WealthCalculator:
 
             # 雇员潜在价值 = max(出售获得的钱, 赎身时雇主获得的钱)
             sell_value = contractor_value * sell_return_rate
-            
+
             # 赎身费用 = 购买记录中的价格
             purchase_price = await self.data_manager.get_latest_purchase_price(
                 group_id, contractor_id
@@ -212,17 +212,19 @@ class WealthCalculator:
 
             # 取两者中的较大值作为潜在价值
             potential_value = max(sell_value, redeem_value)
-            
-            contractor_details.append({
-                "contractor_id": contractor_id,
-                "contractor_value": contractor_value,  # 雇员当前身价
-                "sell_value": sell_value,  # 出售获得的钱
-                "purchase_price": purchase_price,  # 购买记录价格
-                "redeem_value": redeem_value,  # 赎身时雇主获得的钱
-                "potential_value": potential_value,  # 最终潜在价值
-                "sell_return_rate": sell_return_rate,
-                "redeem_return_rate": redeem_return_rate,
-            })
+
+            contractor_details.append(
+                {
+                    "contractor_id": contractor_id,
+                    "contractor_value": contractor_value,  # 雇员当前身价
+                    "sell_value": sell_value,  # 出售获得的钱
+                    "purchase_price": purchase_price,  # 购买记录价格
+                    "redeem_value": redeem_value,  # 赎身时雇主获得的钱
+                    "potential_value": potential_value,  # 最终潜在价值
+                    "sell_return_rate": sell_return_rate,
+                    "redeem_return_rate": redeem_return_rate,
+                }
+            )
 
         total_contractor_value = sum(c["potential_value"] for c in contractor_details)
         total_wealth = base_wealth + total_contractor_value
@@ -329,7 +331,9 @@ class WealthCalculator:
         price_bonus = contract_config.get("contract_level_price_bonus", 0.15)
 
         # 1. 计算身价（现金+银行+雇员潜在价值）
-        wealth_value = await self.calculate_wealth_value(group_id, target_data, target_id)
+        wealth_value = await self.calculate_wealth_value(
+            group_id, target_data, target_id
+        )
 
         # 2. 根据身价确定财富等级
         wealth_level_name = "平民"
@@ -366,7 +370,9 @@ class WealthCalculator:
             "after_min_price": after_min_price,  # 应用最低价格后
             "target_role": target_role,  # 目标角色
             "admin_bonus_applied": admin_bonus_applied,  # 是否应用了管理员加成
-            "admin_bonus_rate": admin_bonus_rate if admin_bonus_applied else 0.0,  # 管理员加成率
+            "admin_bonus_rate": admin_bonus_rate
+            if admin_bonus_applied
+            else 0.0,  # 管理员加成率
             "admin_bonus_amount": admin_bonus_amount,  # 管理员加成金额
             "final_price": final_price,  # 最终价格
         }
@@ -385,10 +391,8 @@ class WealthCalculator:
         Returns:
             雇员潜在价值
         """
-        contractor_data = await self.data_manager.get_user_data(
-            group_id, contractor_id
-        )
-        
+        contractor_data = await self.data_manager.get_user_data(group_id, contractor_id)
+
         # 计算雇员当前身价
         contractor_value = await self.calculate_dynamic_wealth_value(
             group_id, contractor_data, contractor_id
@@ -400,7 +404,7 @@ class WealthCalculator:
 
         # 出售获得的钱
         sell_value = contractor_value * sell_return_rate
-        
+
         # 赎身时雇主获得的钱
         redeem_cost = await self.data_manager.get_latest_purchase_price(
             group_id, contractor_id
@@ -436,7 +440,9 @@ class WealthCalculator:
             contractor_data = await self.data_manager.get_user_data(
                 group_id, contractor_id
             )
-            _, base_rate = await self.get_wealth_level(group_id, contractor_data, contractor_id)
+            _, base_rate = await self.get_wealth_level(
+                group_id, contractor_data, contractor_id
+            )
             contract_level = await self.data_manager.get_purchase_count(contractor_id)
 
             # 基础加成 = 财富等级加成 + 雇佣次数加成
