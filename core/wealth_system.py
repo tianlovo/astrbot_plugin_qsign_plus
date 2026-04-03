@@ -119,16 +119,22 @@ class WealthSystem:
         """
         return await self.calculator.calculate_dynamic_wealth_value(group_id, user_data, user_id)
 
-    def get_max_contractor_limit(self, user_data: dict) -> int:
+    async def get_max_contractor_limit(
+        self, group_id: str, user_data: dict, user_id: str
+    ) -> int:
         """获取用户最大可雇佣数量
 
         Args:
+            group_id: 群ID
             user_data: 用户数据
+            user_id: 用户ID
 
         Returns:
             最大可雇佣数量，-1表示无限制
         """
-        return self.calculator.get_max_contractor_limit(user_data)
+        return await self.calculator.get_max_contractor_limit(
+            group_id, user_data, user_id
+        )
 
     async def get_total_contractor_rate(
         self, group_id: str, contractor_ids: list, admin_ids: list = None
