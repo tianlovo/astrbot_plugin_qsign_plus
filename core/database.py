@@ -387,7 +387,7 @@ class QsignDatabase:
             limit: 返回数量限制
 
         Returns:
-            (用户ID, 总资产) 元组列表
+            (用户ID, 身价) 元组列表
         """
         if not self._conn:
             raise RuntimeError("数据库未初始化")

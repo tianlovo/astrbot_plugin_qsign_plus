@@ -29,7 +29,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.11.7",
+    "2.11.8",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -642,7 +642,7 @@ class ContractSystem(Star):
             sign_text += "【资产状况】\n"
             sign_text += f"💰 现金: {user_data['coins']:.1f} {currency}\n"
             sign_text += f"🏦 银行存款: {user_data['bank']:.1f} {currency}\n"
-            sign_text += f"💎 总资产: {user_data['coins'] + user_data['bank']:.1f} {currency}\n\n"
+            sign_text += f"💎 身价: {user_data['coins'] + user_data['bank']:.1f} {currency}\n\n"
 
             sign_text += f"👥 雇员数量: {len(user_data['contractors'])} 人"
             await send_text_reply(event, sign_text)
@@ -850,7 +850,7 @@ class ContractSystem(Star):
                 info_text += "【资产状况】\n"
                 info_text += f"💰 现金: {user_data['coins']:.1f} {currency}\n"
                 info_text += f"🏦 银行存款: {user_data['bank']:.1f} {currency}\n"
-                info_text += f"💎 总资产: {total_wealth:.1f} {currency}\n"
+                info_text += f"💎 身价: {total_wealth:.1f} {currency}\n"
                 info_text += f"🔥 连续签到: {user_data['consecutive']} 天\n\n"
 
                 info_text += "【明日预计收入】\n"
@@ -884,7 +884,7 @@ class ContractSystem(Star):
                 info_text = f"【{user_name} 的资产】\n"
                 info_text += f"💰 现金: {user_data['coins']:.1f} {currency}\n"
                 info_text += f"🏦 银行: {user_data['bank']:.1f} {currency}\n"
-                info_text += f"💎 总资产: {total_wealth:.1f} {currency}\n"
+                info_text += f"💎 身价: {total_wealth:.1f} {currency}\n"
 
                 # Add contractor info
                 if user_data["contractors"]:
@@ -930,7 +930,7 @@ class ContractSystem(Star):
             info_text = f"【{user_name} 的资产信息】\n"
             info_text += f"💰 现金: {user_data['coins']:.1f} {currency}\n"
             info_text += f"🏦 银行存款: {user_data['bank']:.1f} {currency}\n"
-            info_text += f"💎 总资产: {total_wealth:.1f} {currency}\n"
+            info_text += f"💎 身价: {total_wealth:.1f} {currency}\n"
 
             # Add contractor info
             if user_data["contractors"]:

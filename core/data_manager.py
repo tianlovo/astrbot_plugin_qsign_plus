@@ -168,7 +168,7 @@ class DataManager:
             limit: 返回数量限制
 
         Returns:
-            (用户ID, 总资产) 元组列表
+            (用户ID, 身价) 元组列表
         """
         return await self.db.get_leaderboard(group_id, limit)
 
