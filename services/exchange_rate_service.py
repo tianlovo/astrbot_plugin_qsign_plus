@@ -118,6 +118,11 @@ class ExchangeRateService:
 
     async def _update_exchange_rates(self) -> None:
         """更新所有启用群组的汇率"""
+        # 再次检查数据库是否已初始化（防止初始化状态变化）
+        if not self._data_manager.is_db_initialized():
+            logger.warning("[汇率服务] 数据库未初始化，跳过本次汇率更新")
+            return
+
         stock_config = self._config.get("stock_market", {})
         basic_config = self._config.get("basic", {})
         enabled_groups = basic_config.get("enabled_groups", [])
