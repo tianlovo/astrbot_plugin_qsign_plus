@@ -915,10 +915,10 @@ class ContractSystem(Star):
             for record in history[-7:]:  # 显示最近7条
                 from datetime import datetime
 
-                date_str = datetime.fromtimestamp(record["recorded_at"]).strftime(
+                date_str = datetime.fromtimestamp(record.recorded_at).strftime(
                     "%m-%d %H:%M"
                 )
-                info_text += f"  {date_str}: {record['rate']:.4f}\n"
+                info_text += f"  {date_str}: {record.rate:.4f}\n"
         else:
             info_text += "暂无历史汇率数据\n"
 
