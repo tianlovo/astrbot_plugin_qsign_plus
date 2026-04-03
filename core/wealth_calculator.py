@@ -504,19 +504,20 @@ class WealthCalculator:
         )
 
     async def calculate_tomorrow_income(
-        self, user_data: dict, group_id: str, admin_ids: list = None
+        self, user_data: dict, group_id: str, user_id: str, admin_ids: list = None
     ) -> dict:
         """计算明日预计收入
 
         Args:
             user_data: 用户数据
             group_id: 群ID
+            user_id: 用户ID
             admin_ids: 群管理员ID列表
 
         Returns:
             收入明细字典
         """
-        _, user_base_rate = self.get_wealth_level(user_data)
+        _, user_base_rate = await self.get_wealth_level(group_id, user_data, user_id)
         base_with_bonus = BASE_INCOME * (1 + user_base_rate)
         contractor_dynamic_rates = await self.get_total_contractor_rate(
             group_id, user_data.get("contractors", []), admin_ids

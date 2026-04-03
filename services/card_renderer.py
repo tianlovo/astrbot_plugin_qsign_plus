@@ -143,7 +143,7 @@ class CardRenderer:
         if is_query:
             # 查询模式：计算明日预计收入
             income_info = await self.wealth_system.calculate_tomorrow_income(
-                user_data, group_id
+                user_data, group_id, user_id
             )
 
             # 获取雇员名称列表

@@ -1,5 +1,20 @@
 # Changelog
 
+## v2.12.7 (2026-04-03)
+
+### 修复
+- **修复 calculate_tomorrow_income 调用错误**: 添加 user_id 参数
+  - 更新 `calculate_tomorrow_income()` 方法签名，添加 user_id 参数
+  - 更新 `get_wealth_level()` 调用，添加 await 和正确参数
+  - 更新所有调用方：main.py 和 card_renderer.py
+
+## v2.12.6 (2026-04-03)
+
+### 修复
+- **修复 get_max_contractor_limit 调用错误**: 添加 await 并传入正确参数
+  - 更新 `WealthSystem.get_max_contractor_limit()` 为异步方法
+  - 更新 `main.py` 中的调用，添加 await 并传入 group_id 和 user_id
+
 ## v2.12.5 (2026-04-03)
 
 ### 重构

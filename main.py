@@ -30,7 +30,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.12.6",
+    "2.12.7",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -946,7 +946,7 @@ class ContractSystem(Star):
 
             # Calculate tomorrow income
             income_info = await self.wealth_system.calculate_tomorrow_income(
-                user_data, group_id, admin_ids
+                user_data, group_id, user_id, admin_ids
             )
 
             # 使用实时身价计算

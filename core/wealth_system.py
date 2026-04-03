@@ -174,16 +174,19 @@ class WealthSystem:
         )
 
     async def calculate_tomorrow_income(
-        self, user_data: dict, group_id: str, admin_ids: list = None
+        self, user_data: dict, group_id: str, user_id: str, admin_ids: list = None
     ) -> dict:
         """计算明日预计收入
 
         Args:
             user_data: 用户数据
             group_id: 群ID
+            user_id: 用户ID
             admin_ids: 群管理员ID列表
 
         Returns:
             收入明细字典
         """
-        return await self.calculator.calculate_tomorrow_income(user_data, group_id, admin_ids)
+        return await self.calculator.calculate_tomorrow_income(
+            user_data, group_id, user_id, admin_ids
+        )
