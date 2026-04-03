@@ -543,7 +543,9 @@ reward = random(reward_min, reward_max)  # 默认1-10金币
 
 ### 汇率计算算法
 
-汇率使用**几何布朗运动 (GBM)** 和**均值回归**算法模拟真实市场波动：
+汇率使用**几何布朗运动 (GBM)**、**均值回归**和**趋势模型**模拟真实市场波动：
+
+#### 基础模型（均值回归）
 
 ```
 dS = θ(μ - S)dt + σS dW
@@ -557,6 +559,41 @@ dS = θ(μ - S)dt + σS dW
 - σ (sigma): 波动率
 - dW: 维纳过程增量（随机项）
 ```
+
+#### 趋势模型
+
+在基础模型上叠加趋势项，模拟牛市、熊市、震荡市：
+
+```
+dS = θ(μ - S)dt + σS dW + trend_term
+
+trend_term = trend_state × trend_strength × current_rate × dt
+
+其中:
+- trend_state: 趋势状态（1=牛市上涨，-1=熊市下跌，0=震荡无趋势）
+- trend_strength: 趋势强度（如0.05表示每天5%的趋势影响）
+```
+
+##### 趋势模式
+
+| 模式 | 说明 |
+|------|------|
+| `off` | 关闭趋势，仅使用均值回归模型 |
+| `fixed` | 固定趋势方向，使用配置的 `trend_direction` |
+| `random` | 随机切换趋势，自动在牛市、熊市、震荡市之间切换 |
+
+##### random 模式工作原理
+
+1. **随机选择趋势状态**：根据配置的概率选择牛市/熊市/震荡
+   - 牛市概率：`trend_bull_probability`（默认30%）
+   - 熊市概率：`trend_bear_probability`（默认30%）
+   - 震荡概率：`trend_range_probability`（默认40%）
+
+2. **随机持续天数**：在 `trend_min_days` 到 `trend_max_days` 之间随机
+
+3. **随机趋势强度**：在 `trend_min_strength` 到 `trend_max_strength` 之间随机
+
+4. **自动切换**：当前趋势持续天数耗尽后，自动选择新趋势
 
 ### 交易指令
 
@@ -615,6 +652,15 @@ dS = θ(μ - S)dt + σS dW
 | `mean_reversion_level` | 1.0 | 均值回归水平（长期均衡汇率） |
 | `update_interval_minutes` | 60 | 汇率更新间隔（分钟） |
 | `history_days` | 7 | 汇率历史保存天数 |
+| `trend_mode` | off | 趋势模式：random/fixed/off |
+| `trend_direction` | 0 | 固定趋势方向：1=牛市，-1=熊市，0=震荡 |
+| `trend_bull_probability` | 30 | 牛市概率（%） |
+| `trend_bear_probability` | 30 | 熊市概率（%） |
+| `trend_range_probability` | 40 | 震荡概率（%） |
+| `trend_min_days` | 3 | 趋势最少持续天数 |
+| `trend_max_days` | 10 | 趋势最多持续天数 |
+| `trend_min_strength` | 0.01 | 最小趋势强度（每天1%） |
+| `trend_max_strength` | 0.05 | 最大趋势强度（每天5%） |
 
 ### 数据库表
 
@@ -641,6 +687,7 @@ dS = θ(μ - S)dt + σS dW
 
 ## 版本历史
 
+- **v2.15.0** - 新增汇率随机趋势模型，支持模拟真实股市牛熊行情（random/fixed/off三种模式）
 - **v2.14.0** - 新增群主股市系统，支持群主货币交易和汇率波动
 - **v2.13.0** - 重构汇率更新为独立后台服务
 - **v2.12.12** - 修复浮点精度问题，使用整数比较
