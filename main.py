@@ -288,8 +288,8 @@ class ContractSystem(Star):
         target_role = await self._get_user_role(event, target_id)
 
         # 群主不可被雇佣，请通过股市系统交易群主货币
+        # 不发送消息，让 buy_owner_currency 方法处理
         if target_role == "owner":
-            await send_text_reply(event, "群主不可被雇佣，请通过股市系统交易群主货币。")
             return
 
         # 检查雇佣数量限制
