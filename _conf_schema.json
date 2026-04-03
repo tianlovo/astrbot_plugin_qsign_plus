@@ -200,6 +200,60 @@
         "description": "历史天数",
         "default": 7,
         "hint": "汇率历史保存天数"
+      },
+      "trend_mode": {
+        "type": "string",
+        "description": "趋势模式",
+        "default": "off",
+        "hint": "汇率趋势模式：random=随机自动切换牛熊，fixed=使用固定趋势方向，off=关闭趋势（默认均值回归）"
+      },
+      "trend_direction": {
+        "type": "int",
+        "description": "固定趋势方向",
+        "default": 0,
+        "hint": "trend_mode=fixed时有效。1=牛市（上涨），-1=熊市（下跌），0=震荡"
+      },
+      "trend_bull_probability": {
+        "type": "int",
+        "description": "牛市概率",
+        "default": 30,
+        "hint": "trend_mode=random时，随机进入牛市的概率（百分比）"
+      },
+      "trend_bear_probability": {
+        "type": "int",
+        "description": "熊市概率",
+        "default": 30,
+        "hint": "trend_mode=random时，随机进入熊市的概率（百分比）"
+      },
+      "trend_range_probability": {
+        "type": "int",
+        "description": "震荡概率",
+        "default": 40,
+        "hint": "trend_mode=random时，随机进入震荡市的概率（百分比）。三个概率之和应等于100"
+      },
+      "trend_min_days": {
+        "type": "int",
+        "description": "趋势最少持续天数",
+        "default": 3,
+        "hint": "trend_mode=random时，趋势至少持续的天数"
+      },
+      "trend_max_days": {
+        "type": "int",
+        "description": "趋势最多持续天数",
+        "default": 10,
+        "hint": "trend_mode=random时，趋势最多持续的天数"
+      },
+      "trend_min_strength": {
+        "type": "float",
+        "description": "最小趋势强度",
+        "default": 0.01,
+        "hint": "每天趋势影响的最小幅度，例如0.01代表每天最少1%的趋势影响"
+      },
+      "trend_max_strength": {
+        "type": "float",
+        "description": "最大趋势强度",
+        "default": 0.05,
+        "hint": "每天趋势影响的最大幅度，例如0.05代表每天最多5%的趋势影响"
       }
     }
   },

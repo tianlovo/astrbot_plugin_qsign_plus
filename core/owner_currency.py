@@ -33,6 +33,8 @@ class OwnerCurrencyManager:
     OWNER_CURRENCY_PRECISION = 3
     # 普通货币精度：1位小数
     NORMAL_CURRENCY_PRECISION = 1
+    # 免责声明
+    DISCLAIMER = "（仅供娱乐，不涉及真实货币交易）"
 
     def __init__(self, data_manager, calculator: ExchangeRateCalculator):
         """初始化
@@ -76,7 +78,7 @@ class OwnerCurrencyManager:
         if cost_int > coins_int:
             return (
                 False,
-                f"现金不足，需要 {cost:.1f}，当前现金：{user_data['coins']:.1f}",
+                f"现金不足，需要 {cost:.1f}，当前现金：{user_data['coins']:.1f}\n{self.DISCLAIMER}",
                 0.0,
             )
 
@@ -90,7 +92,11 @@ class OwnerCurrencyManager:
         logger.info(
             f"[群主货币购买] 群 {group_id} 用户 {user_id}: 购买 {amount}, 花费 {cost}"
         )
-        return True, f"成功购买 {amount:.3f} 群主货币，花费 {cost:.1f}", amount
+        return (
+            True,
+            f"成功购买 {amount:.3f} 群主货币，花费 {cost:.1f}\n{self.DISCLAIMER}",
+            amount,
+        )
 
     async def sell_currency(
         self, group_id: str, user_id: str, amount: float, rate: float
@@ -120,7 +126,7 @@ class OwnerCurrencyManager:
         if amount_int > balance_int:
             return (
                 False,
-                f"群主货币不足，当前余额：{balance:.3f}",
+                f"群主货币不足，当前余额：{balance:.3f}\n{self.DISCLAIMER}",
                 0.0,
             )
 
@@ -139,7 +145,11 @@ class OwnerCurrencyManager:
         logger.info(
             f"[群主货币出售] 群 {group_id} 用户 {user_id}: 出售 {amount}, 获得 {revenue}"
         )
-        return True, f"成功出售 {amount:.3f} 群主货币，获得 {revenue:.1f}", revenue
+        return (
+            True,
+            f"成功出售 {amount:.3f} 群主货币，获得 {revenue:.1f}\n{self.DISCLAIMER}",
+            revenue,
+        )
 
     async def get_balance(self, group_id: str, user_id: str) -> float:
         """获取用户群主货币余额

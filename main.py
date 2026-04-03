@@ -73,6 +73,15 @@ class ContractSystem(Star):
             volatility=stock_config.get("volatility", 0.02),
             mean_reversion_speed=stock_config.get("mean_reversion_speed", 0.1),
             mean_reversion_level=stock_config.get("mean_reversion_level", 1.0),
+            trend_mode=stock_config.get("trend_mode", "off"),
+            trend_direction=stock_config.get("trend_direction", 0),
+            trend_bull_probability=stock_config.get("trend_bull_probability", 30),
+            trend_bear_probability=stock_config.get("trend_bear_probability", 30),
+            trend_range_probability=stock_config.get("trend_range_probability", 40),
+            trend_min_days=stock_config.get("trend_min_days", 3),
+            trend_max_days=stock_config.get("trend_max_days", 10),
+            trend_min_strength=stock_config.get("trend_min_strength", 0.01),
+            trend_max_strength=stock_config.get("trend_max_strength", 0.05),
         )
         self.exchange_history = ExchangeRateHistory(db=self.data_manager.db)
         self.owner_currency_manager = OwnerCurrencyManager(
@@ -772,8 +781,9 @@ class ContractSystem(Star):
 
             await send_text_reply(
                 event,
-                f"购买成功！您花费 {cost:.1f} {currency_name} 购买了 {actual_amount:.1f} {currency_unit}\n"
-                f"当前汇率: 1 {currency_unit} = {current_rate:.4f} {currency_name}",
+                f"购买成功！您花费 {cost:.1f} {currency_name} 购买了 {actual_amount:.3f} {currency_unit}\n"
+                f"当前汇率: 1 {currency_unit} = {current_rate:.4f} {currency_name}\n"
+                f"{self.owner_currency_manager.DISCLAIMER}",
             )
         else:
             await send_text_reply(event, message)
@@ -849,8 +859,9 @@ class ContractSystem(Star):
 
             await send_text_reply(
                 event,
-                f"出售成功！您出售了 {amount:.1f} {currency_unit}，获得 {revenue:.1f} {currency_name}\n"
-                f"当前汇率: 1 {currency_unit} = {current_rate:.4f} {currency_name}",
+                f"出售成功！您出售了 {amount:.3f} {currency_unit}，获得 {revenue:.1f} {currency_name}\n"
+                f"当前汇率: 1 {currency_unit} = {current_rate:.4f} {currency_name}\n"
+                f"{self.owner_currency_manager.DISCLAIMER}",
             )
         else:
             await send_text_reply(event, message)
@@ -921,6 +932,8 @@ class ContractSystem(Star):
                 info_text += f"  {date_str}: {record.rate:.4f}\n"
         else:
             info_text += "暂无历史汇率数据\n"
+
+        info_text += f"\n{self.owner_currency_manager.DISCLAIMER}"
 
         await send_text_reply(event, info_text)
 
