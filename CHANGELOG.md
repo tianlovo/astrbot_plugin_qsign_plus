@@ -1,5 +1,23 @@
 # Changelog
 
+## v2.15.0 (2026-04-03)
+
+### 新增
+- **汇率随机趋势模型**: 支持模拟真实股市的牛熊行情
+  - 新增 `trend_mode` 配置：random=随机切换牛熊，fixed=固定趋势，off=关闭趋势
+  - 新增趋势概率配置：trend_bull_probability（牛市概率）、trend_bear_probability（熊市概率）、trend_range_probability（震荡概率）
+  - 新增趋势持续时间配置：trend_min_days（最少持续天数）、trend_max_days（最多持续天数）
+  - 新增趋势强度配置：trend_min_strength（最小强度）、trend_max_strength（最大强度）
+  - 趋势计算公式：趋势项 = trend_state × trend_strength × current_rate × dt
+  - 支持自动在牛市（上涨）、熊市（下跌）、震荡（无趋势）之间随机切换
+
+### 变更
+- **ExchangeRateCalculator 类扩展**: 添加趋势计算功能
+  - 新增趋势状态属性：_trend_state、_trend_strength、_state_duration
+  - 新增 _update_trend_state() 方法用于更新趋势状态
+  - 修改 calculate_next_rate() 方法，叠加趋势项到汇率变化
+  - 保持向后兼容，trend_mode=off 时表现与原有均值回归模型一致
+
 ## v2.14.0 (2026-04-03)
 
 ### 新增
