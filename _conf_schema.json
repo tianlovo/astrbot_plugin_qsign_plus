@@ -190,13 +190,13 @@
         "hint": "长期均衡汇率"
       },
       "update_interval_minutes": {
-        "type": "integer",
+        "type": "int",
         "description": "更新间隔",
         "default": 60,
         "hint": "汇率更新间隔（分钟）"
       },
       "history_days": {
-        "type": "integer",
+        "type": "int",
         "description": "历史天数",
         "default": 7,
         "hint": "汇率历史保存天数"
