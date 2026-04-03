@@ -724,7 +724,7 @@ class ContractSystem(Star):
         if target_role != "owner":
             return
 
-        # 解析数量（支持忽略空格，限制一位小数）
+        # 解析数量（支持忽略空格，限制三位小数）
         # 从消息中提取纯文本（不包括At组件），避免将QQ号误解析为数量
         message_text = get_plain_text_from_message(event)
         # 移除所有空格
@@ -732,14 +732,14 @@ class ContractSystem(Star):
         import re
 
         # 严格匹配："购买" + 数字（数字必须在消息末尾）
-        amount_match = re.search(r"购买([\d.]+)$", message_text)
+        # 支持最多3位小数
+        amount_match = re.search(r"购买([\d]+(?:\.[\d]{1,3})?)$", message_text)
         if not amount_match:
             await send_text_reply(event, "请指定购买数量，例如：购买 @群主 10.5")
             return
 
         try:
             amount = float(amount_match.group(1))
-            amount = round(amount, 1)
             if amount <= 0:
                 await send_text_reply(event, "购买数量必须大于0。")
                 return
@@ -808,7 +808,7 @@ class ContractSystem(Star):
         if target_role != "owner":
             return
 
-        # 解析数量（支持忽略空格，限制一位小数）
+        # 解析数量（支持忽略空格，限制三位小数）
         # 从消息中提取纯文本（不包括At组件），避免将QQ号误解析为数量
         message_text = get_plain_text_from_message(event)
         # 移除所有空格
@@ -816,14 +816,14 @@ class ContractSystem(Star):
         import re
 
         # 严格匹配："出售" + 数字（数字必须在消息末尾）
-        amount_match = re.search(r"出售([\d.]+)$", message_text)
+        # 支持最多3位小数
+        amount_match = re.search(r"出售([\d]+(?:\.[\d]{1,3})?)$", message_text)
         if not amount_match:
             await send_text_reply(event, "请指定出售数量，例如：出售 @群主 10.5")
             return
 
         try:
             amount = float(amount_match.group(1))
-            amount = round(amount, 1)
             if amount <= 0:
                 await send_text_reply(event, "出售数量必须大于0。")
                 return

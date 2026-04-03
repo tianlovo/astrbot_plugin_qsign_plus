@@ -6,6 +6,7 @@
 
 from astrbot.api import logger
 
+from ..utils.helpers import truncate_decimal
 from .exchange_rate import ExchangeRateCalculator
 
 
@@ -27,6 +28,11 @@ class InvalidAmountError(Exception):
 
 class OwnerCurrencyManager:
     """群主货币管理器"""
+
+    # 群主货币精度：3位小数
+    OWNER_CURRENCY_PRECISION = 3
+    # 普通货币精度：1位小数
+    NORMAL_CURRENCY_PRECISION = 1
 
     def __init__(self, data_manager, calculator: ExchangeRateCalculator):
         """初始化
@@ -52,13 +58,14 @@ class OwnerCurrencyManager:
         Returns:
             (是否成功, 消息, 实际购买数量)
         """
-        # 限制精度为一位小数
-        amount = round(amount, 1)
+        # 限制精度为3位小数（群主货币）
+        amount = truncate_decimal(amount, self.OWNER_CURRENCY_PRECISION)
         if amount <= 0:
             raise InvalidAmountError("购买数量必须大于0")
 
-        # 计算所需货币成本
+        # 计算所需货币成本（普通货币截断至1位小数）
         cost = self.calculator.calculate_buy_cost(amount, rate)
+        cost = truncate_decimal(cost, self.NORMAL_CURRENCY_PRECISION)
 
         # 获取用户数据
         user_data = await self.data_manager.get_user_data(group_id, user_id)
@@ -83,7 +90,7 @@ class OwnerCurrencyManager:
         logger.info(
             f"[群主货币购买] 群 {group_id} 用户 {user_id}: 购买 {amount}, 花费 {cost}"
         )
-        return True, f"成功购买 {amount:.1f} 群主货币，花费 {cost:.1f}", amount
+        return True, f"成功购买 {amount:.3f} 群主货币，花费 {cost:.1f}", amount
 
     async def sell_currency(
         self, group_id: str, user_id: str, amount: float, rate: float
@@ -99,8 +106,8 @@ class OwnerCurrencyManager:
         Returns:
             (是否成功, 消息, 实际获得金额)
         """
-        # 限制精度为一位小数
-        amount = round(amount, 1)
+        # 限制精度为3位小数（群主货币）
+        amount = truncate_decimal(amount, self.OWNER_CURRENCY_PRECISION)
         if amount <= 0:
             raise InvalidAmountError("出售数量必须大于0")
 
@@ -108,17 +115,18 @@ class OwnerCurrencyManager:
         balance = await self.get_balance(group_id, user_id)
 
         # 验证用户有足够群主货币余额（使用整数比较避免浮点精度问题）
-        amount_int = int(amount * 10)
-        balance_int = int(balance * 10)
+        amount_int = int(amount * 1000)
+        balance_int = int(balance * 1000)
         if amount_int > balance_int:
             return (
                 False,
-                f"群主货币不足，当前余额：{balance:.1f}",
+                f"群主货币不足，当前余额：{balance:.3f}",
                 0.0,
             )
 
-        # 计算出售获得金额
+        # 计算出售获得金额（普通货币截断至1位小数）
         revenue = self.calculator.calculate_sell_revenue(amount, rate)
+        revenue = truncate_decimal(revenue, self.NORMAL_CURRENCY_PRECISION)
 
         # 扣除群主货币余额
         await self.data_manager.add_owner_currency_balance(group_id, user_id, -amount)
@@ -131,7 +139,7 @@ class OwnerCurrencyManager:
         logger.info(
             f"[群主货币出售] 群 {group_id} 用户 {user_id}: 出售 {amount}, 获得 {revenue}"
         )
-        return True, f"成功出售 {amount:.1f} 群主货币，获得 {revenue:.1f}", revenue
+        return True, f"成功出售 {amount:.3f} 群主货币，获得 {revenue:.1f}", revenue
 
     async def get_balance(self, group_id: str, user_id: str) -> float:
         """获取用户群主货币余额

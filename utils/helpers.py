@@ -119,3 +119,23 @@ def get_plain_text_from_message(event: AstrMessageEvent) -> str:
             text_parts.append(component.text)
 
     return "".join(text_parts)
+
+
+def truncate_decimal(amount: float, precision: int = 1) -> float:
+    """截断小数位数（不使用四舍五入）
+
+    将数值截断到指定的小数位数，直接丢弃超出精度的小数位。
+    例如：truncate_decimal(123.4567, 1) -> 123.4
+             truncate_decimal(123.4567, 3) -> 123.456
+
+    Args:
+        amount: 要截断的数值
+        precision: 保留的小数位数，默认1位
+
+    Returns:
+        截断后的数值
+    """
+    if precision < 0:
+        return amount
+    multiplier = 10**precision
+    return int(amount * multiplier) / multiplier
