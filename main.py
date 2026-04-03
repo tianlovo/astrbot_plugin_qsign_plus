@@ -281,7 +281,12 @@ class ContractSystem(Star):
             group_id, target_data, target_id
         )
 
-        # 管理员和群主享受价格加成
+        # 确保不低于最低购买价格
+        trade_config = self.config.get("trade", {})
+        min_purchase_price = trade_config.get("min_purchase_price", 100)
+        base_cost = max(base_cost, min_purchase_price)
+
+        # 管理员和群主享受价格加成（在最低价格基础上）
         if target_role in ["owner", "admin"]:
             admin_bonus = admin_config.get("admin_price_bonus", 0.5)
             base_cost *= 1 + admin_bonus
