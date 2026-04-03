@@ -7,11 +7,8 @@
 
 import math
 import random
-import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
-
-from astrbot.api import logger
 
 if TYPE_CHECKING:
     from .database import QsignDatabase
