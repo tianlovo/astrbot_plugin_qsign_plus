@@ -30,7 +30,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.11.9",
+    "2.12.0",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -372,6 +372,92 @@ class ContractSystem(Star):
         await send_text_reply(
             event, f"成功雇佣 {target_name}，消耗{total_cost:.1f}{currency}。"
         )
+
+    @filter.regex(r"^详细价格\s*")
+    async def detailed_price(self, event: AstrMessageEvent):
+        """查询购买指定成员的详细价格（调试模式）"""
+        if not is_at_bot(event):
+            return
+
+        group_id = str(event.message_obj.group_id)
+        basic_config = self.config.get("basic", {})
+        if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
+            return
+
+        user_id = str(event.get_sender_id())
+
+        # 获取目标用户（支持at和空格可选）
+        target_id = get_target_at_user(event)
+        if not target_id:
+            target_id = get_first_at_user(event)
+
+        currency = self._get_currency_name()
+
+        # 如果没有at任何人，或at自己，查询自己的详细身价
+        if not target_id or target_id == user_id:
+            target_id = user_id
+
+        # 获取目标用户角色
+        target_role = await self._get_user_role(event, target_id)
+        admin_config = self.config.get("admin", {})
+
+        # 检查群主是否可被购买
+        if target_role == "owner":
+            owner_can_be_purchased = admin_config.get("owner_can_be_purchased", False)
+            if not owner_can_be_purchased:
+                await send_text_reply(event, "群主不可被购买！")
+                return
+
+        # 获取目标用户数据
+        target_data = await self.data_manager.get_user_data(group_id, target_id)
+
+        # 获取详细价格分解
+        detailed = await self.wealth_calculator.calculate_purchase_price_detailed(
+            group_id, target_data, target_id, target_role
+        )
+
+        target_name = await self._get_user_name_from_platform(event, target_id)
+
+        # 构建详细价格信息
+        role_text = ""
+        if target_role == "owner":
+            role_text = "（群主）"
+        elif target_role == "admin":
+            role_text = "（管理员）"
+
+        info_text = f"💰 {target_name}{role_text} 的详细价格信息\n"
+        info_text += "=" * 30 + "\n\n"
+
+        info_text += "【基础数据】\n"
+        info_text += f"  身价: {detailed['wealth_value']:.1f} {currency}\n"
+        info_text += f"  财富等级: {detailed['wealth_level']}\n"
+        info_text += f"  契约等级: {detailed['contract_level']}\n\n"
+
+        info_text += "【价格计算过程】\n"
+        info_text += f"  1. 基础身价: {detailed['base_value']:.1f} {currency}\n"
+        info_text += f"     (基于财富等级 {detailed['wealth_level']})\n"
+        info_text += f"  2. 契约加成: +{detailed['contract_level']} × {detailed['price_bonus_rate']*100:.0f}%\n"
+        info_text += f"  3. 动态身价: {detailed['dynamic_wealth']:.1f} {currency}\n"
+        info_text += f"     ({detailed['base_value']:.1f} × (1 + {detailed['contract_level']} × {detailed['price_bonus_rate']:.2f}))\n\n"
+
+        info_text += "【价格调整】\n"
+        if detailed['min_price_applied']:
+            info_text += f"  4. 最低价格限制: {detailed['min_purchase_price']:.1f} {currency}\n"
+            info_text += f"     (动态身价 {detailed['dynamic_wealth']:.1f} 低于最低价格，已调整)\n"
+        else:
+            info_text += f"  4. 最低价格限制: 未触发\n"
+            info_text += f"     (动态身价 {detailed['dynamic_wealth']:.1f} >= 最低价格 {detailed['min_purchase_price']:.1f})\n"
+
+        if detailed['admin_bonus_applied']:
+            info_text += f"  5. 管理员加成: +{detailed['admin_bonus_rate']*100:.0f}%\n"
+            info_text += f"     (+{detailed['admin_bonus_amount']:.1f} {currency})\n"
+        else:
+            info_text += f"  5. 管理员加成: 无\n"
+
+        info_text += "\n" + "=" * 30 + "\n"
+        info_text += f"【最终价格】{detailed['final_price']:.1f} {currency}\n"
+
+        await send_text_reply(event, info_text)
 
     @filter.regex(r"^价格\s*")
     async def price(self, event: AstrMessageEvent):

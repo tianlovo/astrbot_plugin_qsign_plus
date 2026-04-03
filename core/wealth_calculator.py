@@ -218,6 +218,77 @@ class WealthCalculator:
 
         return base_cost
 
+    async def calculate_purchase_price_detailed(
+        self,
+        group_id: str,
+        target_data: dict,
+        target_id: str,
+        target_role: str = "member",
+    ) -> dict:
+        """计算购买价格（详细分解版，用于调试）
+
+        Args:
+            group_id: 群ID
+            target_data: 目标用户数据
+            target_id: 目标用户ID
+            target_role: 目标用户角色 (owner/admin/member)
+
+        Returns:
+            包含价格分解详情的字典
+        """
+        trade_config = self.config.get("trade", {})
+        admin_config = self.config.get("admin", {})
+        contract_config = self.config.get("contract", {})
+        min_purchase_price = trade_config.get("min_purchase_price", 100)
+        admin_bonus_rate = admin_config.get("admin_price_bonus", 0.5)
+        price_bonus = contract_config.get("contract_level_price_bonus", 0.15)
+
+        # 1. 计算身价（现金+银行+雇员潜在价值）
+        wealth_value = await self.calculate_wealth_value(group_id, target_data, target_id)
+
+        # 2. 根据身价确定基础身价
+        base_value = WEALTH_BASE_VALUES["平民"]
+        wealth_level_name = "平民"
+        for min_coin, name, _ in reversed(WEALTH_LEVELS):
+            if wealth_value >= min_coin:
+                base_value = WEALTH_BASE_VALUES[name]
+                wealth_level_name = name
+                break
+
+        # 3. 获取契约等级
+        contract_level = await self.data_manager.get_purchase_count(target_id)
+
+        # 4. 计算动态身价（基础身价 × (1 + 契约等级 × 每级加成)）
+        dynamic_wealth = base_value * (1 + contract_level * price_bonus)
+
+        # 5. 应用最低价格限制
+        after_min_price = max(dynamic_wealth, min_purchase_price)
+        min_price_applied = after_min_price > dynamic_wealth
+
+        # 6. 应用管理员/群主加成
+        admin_bonus_applied = target_role in ["owner", "admin"]
+        admin_bonus_amount = 0.0
+        if admin_bonus_applied:
+            admin_bonus_amount = after_min_price * admin_bonus_rate
+        final_price = after_min_price + admin_bonus_amount
+
+        return {
+            "wealth_value": wealth_value,  # 身价
+            "wealth_level": wealth_level_name,  # 财富等级
+            "base_value": base_value,  # 基础身价
+            "contract_level": contract_level,  # 契约等级
+            "price_bonus_rate": price_bonus,  # 每级契约身价加成率
+            "dynamic_wealth": dynamic_wealth,  # 动态身价
+            "min_purchase_price": min_purchase_price,  # 最低购买价格
+            "min_price_applied": min_price_applied,  # 是否应用了最低价格
+            "after_min_price": after_min_price,  # 应用最低价格后
+            "target_role": target_role,  # 目标角色
+            "admin_bonus_applied": admin_bonus_applied,  # 是否应用了管理员加成
+            "admin_bonus_rate": admin_bonus_rate if admin_bonus_applied else 0.0,  # 管理员加成率
+            "admin_bonus_amount": admin_bonus_amount,  # 管理员加成金额
+            "final_price": final_price,  # 最终价格
+        }
+
     async def calculate_contractor_potential_value(
         self, group_id: str, contractor_id: str
     ) -> float:
