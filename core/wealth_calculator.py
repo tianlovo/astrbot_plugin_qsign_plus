@@ -436,7 +436,7 @@ class WealthCalculator:
             contractor_data = await self.data_manager.get_user_data(
                 group_id, contractor_id
             )
-            _, base_rate = self.get_wealth_level(contractor_data)
+            _, base_rate = await self.get_wealth_level(group_id, contractor_data, contractor_id)
             contract_level = await self.data_manager.get_purchase_count(contractor_id)
 
             # 基础加成 = 财富等级加成 + 雇佣次数加成
