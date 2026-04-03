@@ -222,7 +222,7 @@ class WealthCalculator:
     ) -> float:
         """计算动态身价（用于购买价格计算）
 
-        动态身价 = 基础身价 × (1 + 契约等级 × 每级契约身价加成)
+        动态身价 = 当前身价 × (1 + 契约等级 × 每级契约身价加成)
 
         Args:
             group_id: 群ID
@@ -232,22 +232,15 @@ class WealthCalculator:
         Returns:
             动态身价数值
         """
-        # 使用身价计算（包含雇员潜在价值）
+        # 使用身价计算（包含雇员潜在价值）作为基础
         total = await self.calculate_wealth_value(group_id, user_data, user_id)
-        
-        # 根据身价确定基础身价
-        base_value = WEALTH_BASE_VALUES["平民"]
-        for min_coin, name, _ in reversed(WEALTH_LEVELS):
-            if total >= min_coin:
-                base_value = WEALTH_BASE_VALUES[name]
-                break
-        
+
         # 获取契约等级（被购买次数）
         contract_level = await self.data_manager.get_purchase_count(user_id)
         contract_config = self.config.get("contract", {})
         price_bonus = contract_config.get("contract_level_price_bonus", 0.15)
-        
-        return base_value * (1 + contract_level * price_bonus)
+
+        return total * (1 + contract_level * price_bonus)
 
     async def calculate_purchase_price(
         self,
@@ -318,20 +311,18 @@ class WealthCalculator:
         # 1. 计算身价（现金+银行+雇员潜在价值）
         wealth_value = await self.calculate_wealth_value(group_id, target_data, target_id)
 
-        # 2. 根据身价确定基础身价
-        base_value = WEALTH_BASE_VALUES["平民"]
+        # 2. 根据身价确定财富等级
         wealth_level_name = "平民"
         for min_coin, name, _ in reversed(WEALTH_LEVELS):
             if wealth_value >= min_coin:
-                base_value = WEALTH_BASE_VALUES[name]
                 wealth_level_name = name
                 break
 
         # 3. 获取契约等级
         contract_level = await self.data_manager.get_purchase_count(target_id)
 
-        # 4. 计算动态身价（基础身价 × (1 + 契约等级 × 每级加成)）
-        dynamic_wealth = base_value * (1 + contract_level * price_bonus)
+        # 4. 计算动态身价（当前身价 × (1 + 契约等级 × 每级加成)）
+        dynamic_wealth = wealth_value * (1 + contract_level * price_bonus)
 
         # 5. 应用最低价格限制
         after_min_price = max(dynamic_wealth, min_purchase_price)
@@ -347,7 +338,6 @@ class WealthCalculator:
         return {
             "wealth_value": wealth_value,  # 身价
             "wealth_level": wealth_level_name,  # 财富等级
-            "base_value": base_value,  # 基础身价
             "contract_level": contract_level,  # 契约等级
             "price_bonus_rate": price_bonus,  # 每级契约身价加成率
             "dynamic_wealth": dynamic_wealth,  # 动态身价

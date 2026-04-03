@@ -30,7 +30,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.12.1",
+    "2.12.2",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -475,11 +475,10 @@ class ContractSystem(Star):
         info_text += f"  财富等级: {price_detailed['wealth_level']}\n"
         info_text += f"  契约等级: {price_detailed['contract_level']}\n\n"
 
-        info_text += f"  1. 基础身价: {price_detailed['base_value']:.1f} {currency}\n"
-        info_text += f"     (基于财富等级 {price_detailed['wealth_level']})\n"
+        info_text += f"  1. 当前身价: {price_detailed['wealth_value']:.1f} {currency}\n"
         info_text += f"  2. 契约加成: +{price_detailed['contract_level']} × {price_detailed['price_bonus_rate']*100:.0f}%\n"
         info_text += f"  3. 动态身价: {price_detailed['dynamic_wealth']:.1f} {currency}\n"
-        info_text += f"     ({price_detailed['base_value']:.1f} × (1 + {price_detailed['contract_level']} × {price_detailed['price_bonus_rate']:.2f}))\n\n"
+        info_text += f"     ({price_detailed['wealth_value']:.1f} × (1 + {price_detailed['contract_level']} × {price_detailed['price_bonus_rate']:.2f}))\n\n"
 
         info_text += "【价格调整】\n"
         if price_detailed['min_price_applied']:
