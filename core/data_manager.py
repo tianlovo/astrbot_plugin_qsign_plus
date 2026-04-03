@@ -480,8 +480,10 @@ class DataManager:
         Returns:
             是否成功
         """
+        current_balance = await self.db.get_owner_currency_balance(group_id, user_id)
+        new_balance = current_balance + amount
         return await self.db.update_owner_currency_balance(
-            group_id, user_id, amount, is_increment=True
+            group_id, user_id, new_balance
         )
 
     async def close(self):
