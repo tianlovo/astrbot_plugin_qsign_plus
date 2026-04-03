@@ -720,10 +720,16 @@ class ContractSystem(Star):
 
         # 解析数量（支持忽略空格，限制一位小数）
         message_text = event.message_str
-        # 移除"购买"和@部分，提取数量
+        # 移除所有空格
+        message_text = message_text.replace(" ", "").replace("\u3000", "")
         import re
 
-        amount_match = re.search(r"购买.*?\s*([\d.]+)", message_text.replace(" ", ""))
+        # 匹配"购买"后可选的@用户，然后是数字
+        # 排除@后面的QQ号，只匹配显式输入的数量
+        # 先移除所有[@数字]格式的@提及
+        text_without_at = re.sub(r"\[@\d+\]", "", message_text)
+        # 再匹配购买后的数字
+        amount_match = re.search(r"购买[^\d]*([\d.]+)", text_without_at)
         if not amount_match:
             await send_text_reply(event, "请指定购买数量，例如：购买 @群主 10.5")
             return
@@ -799,11 +805,18 @@ class ContractSystem(Star):
             await send_text_reply(event, "只能出售群主的货币！")
             return
 
-        # 解析数量
+        # 解析数量（支持忽略空格，限制一位小数）
+        message_text = event.message_str
+        # 移除所有空格
+        message_text = message_text.replace(" ", "").replace("\u3000", "")
         import re
 
-        message_text = event.message_str
-        amount_match = re.search(r"出售.*?\s*([\d.]+)", message_text.replace(" ", ""))
+        # 匹配"出售"后可选的@用户，然后是数字
+        # 排除@后面的QQ号，只匹配显式输入的数量
+        # 先移除所有[@数字]格式的@提及
+        text_without_at = re.sub(r"\[@\d+\]", "", message_text)
+        # 再匹配出售后的数字
+        amount_match = re.search(r"出售[^\d]*([\d.]+)", text_without_at)
         if not amount_match:
             await send_text_reply(event, "请指定出售数量，例如：出售 @群主 10.5")
             return
