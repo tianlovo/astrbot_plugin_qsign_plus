@@ -59,6 +59,9 @@ class ContractSystem(Star):
         self._admin_cache: dict[str, dict] = {}
         self._admin_cache_ttl = 300  # 缓存有效期5分钟
 
+        # 后台任务引用
+        self._exchange_rate_task: asyncio.Task | None = None
+
         # Load data to cache
         asyncio.create_task(self.data_manager.init())
 
@@ -96,37 +99,75 @@ class ContractSystem(Star):
             logger.error(f"同步兑换码配置失败: {e}")
 
     def _start_exchange_rate_task(self):
-        """启动汇率定时更新任务"""
+        """启动汇率定时更新后台服务"""
 
         async def update_exchange_rate():
+            # 等待数据库初始化完成
+            while not self.data_manager.is_db_initialized():
+                await asyncio.sleep(1)
+
+            logger.info("[汇率服务] 后台汇率更新服务已启动")
+
             while True:
                 try:
                     stock_config = self.config.get("stock_market", {})
                     interval = stock_config.get("update_interval_minutes", 60)
-                    await asyncio.sleep(interval * 60)
+
+                    # 使用 asyncio.Event 实现可中断的睡眠
+                    try:
+                        await asyncio.wait_for(
+                            asyncio.sleep(interval * 60),
+                            timeout=interval * 60 + 10  # 额外10秒容错
+                        )
+                    except asyncio.TimeoutError:
+                        pass
 
                     # 获取所有启用的群组
                     basic_config = self.config.get("basic", {})
                     enabled_groups = basic_config.get("enabled_groups", [])
 
+                    if not enabled_groups:
+                        continue
+
+                    # 批量更新汇率
                     for group_id in enabled_groups:
-                        current_rate = await self.exchange_history.get_current_rate(
-                            group_id
-                        )
-                        if current_rate is None:
-                            current_rate = stock_config.get("base_exchange_rate", 1.0)
+                        try:
+                            current_rate = await self.exchange_history.get_current_rate(
+                                group_id
+                            )
+                            if current_rate is None:
+                                current_rate = stock_config.get("base_exchange_rate", 1.0)
+                                # 初始化汇率记录
+                                await self.exchange_history.record_rate(
+                                    group_id, current_rate
+                                )
 
-                        next_rate = self.exchange_calculator.calculate_next_rate(
-                            current_rate
-                        )
-                        await self.exchange_history.record_rate(group_id, next_rate)
-                        logger.info(
-                            f"群 {group_id} 汇率已更新: {current_rate:.4f} -> {next_rate:.4f}"
-                        )
+                            next_rate = self.exchange_calculator.calculate_next_rate(
+                                current_rate
+                            )
+                            await self.exchange_history.record_rate(group_id, next_rate)
+                            logger.info(
+                                f"[汇率服务] 群 {group_id} 汇率已更新: {current_rate:.4f} -> {next_rate:.4f}"
+                            )
+                        except Exception as e:
+                            logger.error(f"[汇率服务] 更新群 {group_id} 汇率失败: {e}")
+
+                    # 定期清理旧记录
+                    try:
+                        await self.exchange_history.cleanup_old_records(days=30)
+                    except Exception as e:
+                        logger.warning(f"[汇率服务] 清理旧汇率记录失败: {e}")
+
+                except asyncio.CancelledError:
+                    logger.info("[汇率服务] 汇率更新服务已取消")
+                    break
                 except Exception as e:
-                    logger.error(f"汇率更新任务出错: {e}")
+                    logger.error(f"[汇率服务] 汇率更新任务出错: {e}")
+                    # 出错后等待一段时间再重试
+                    await asyncio.sleep(60)
 
-        asyncio.create_task(update_exchange_rate())
+        # 保存任务引用以便管理和取消
+        self._exchange_rate_task = asyncio.create_task(update_exchange_rate())
 
     def _get_currency_name(self) -> str:
         """获取货币名称
@@ -1713,6 +1754,15 @@ class ContractSystem(Star):
 
     async def terminate(self):
         """插件终止时关闭资源"""
+        # 取消汇率更新后台任务
+        if self._exchange_rate_task and not self._exchange_rate_task.done():
+            self._exchange_rate_task.cancel()
+            try:
+                await self._exchange_rate_task
+            except asyncio.CancelledError:
+                pass
+            logger.info("[汇率服务] 汇率更新后台任务已停止")
+
         await self.image_cache.close()
         await self.data_manager.close()
 
