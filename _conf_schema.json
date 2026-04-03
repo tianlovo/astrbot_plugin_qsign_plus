@@ -166,25 +166,25 @@
     "hint": "汇率市场相关配置，模拟股票市场波动",
     "items": {
       "base_exchange_rate": {
-        "type": "number",
+        "type": "float",
         "description": "基准汇率",
         "default": 1.0,
         "hint": "1群主货币 = X 货币"
       },
       "volatility": {
-        "type": "number",
+        "type": "float",
         "description": "波动率",
         "default": 0.02,
         "hint": "几何布朗运动波动率参数"
       },
       "mean_reversion_speed": {
-        "type": "number",
+        "type": "float",
         "description": "均值回归速度",
         "default": 0.1,
         "hint": "均值回归速度参数"
       },
       "mean_reversion_level": {
-        "type": "number",
+        "type": "float",
         "description": "均值回归水平",
         "default": 1.0,
         "hint": "长期均衡汇率"
