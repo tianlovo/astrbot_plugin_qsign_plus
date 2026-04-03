@@ -714,9 +714,9 @@ class ContractSystem(Star):
         user_id = str(event.get_sender_id())
 
         # 检查目标是否是群主
+        # 如果不是群主，不发送提示，让 purchase 方法处理
         target_role = await self._get_user_role(event, target_id)
         if target_role != "owner":
-            await send_text_reply(event, "只能购买群主的货币！")
             return
 
         # 解析数量（支持忽略空格，限制一位小数）
@@ -798,9 +798,9 @@ class ContractSystem(Star):
         user_id = str(event.get_sender_id())
 
         # 检查目标是否是群主
+        # 如果不是群主，不发送提示，直接返回
         target_role = await self._get_user_role(event, target_id)
         if target_role != "owner":
-            await send_text_reply(event, "只能出售群主的货币！")
             return
 
         # 解析数量（支持忽略空格，限制一位小数）
