@@ -10,6 +10,8 @@ import random
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from astrbot.api import logger
+
 if TYPE_CHECKING:
     from .database import QsignDatabase
 
@@ -178,6 +180,12 @@ class ExchangeRateCalculator:
         # 计算新汇率，确保为正
         next_rate = max(0.01, current_rate + dS)
 
+        # 输出详细的计算日志
+        self._log_calculation_details(
+            current_rate, next_rate, dS, mean_reversion_term, 
+            diffusion_term, trend_term, dW
+        )
+
         # 更新趋势状态持续时间
         if self.trend_mode != "off" and self._state_duration > 0:
             self._state_duration -= 1
@@ -185,6 +193,62 @@ class ExchangeRateCalculator:
                 self._update_trend_state()
 
         return next_rate
+
+    def _log_calculation_details(
+        self, 
+        current_rate: float, 
+        next_rate: float, 
+        dS: float,
+        mean_reversion_term: float,
+        diffusion_term: float,
+        trend_term: float,
+        dW: float
+    ) -> None:
+        """输出汇率计算详细日志
+
+        Args:
+            current_rate: 当前汇率
+            next_rate: 下一期汇率
+            dS: 汇率总变化量
+            mean_reversion_term: 均值回归项
+            diffusion_term: 随机波动项
+            trend_term: 趋势项
+            dW: 维纳过程增量
+        """
+        # 趋势状态名称
+        trend_names = {1: "牛市", -1: "熊市", 0: "震荡"}
+        trend_name = trend_names.get(self._trend_state, "未知")
+
+        # 计算各项占比
+        total_change = abs(mean_reversion_term) + abs(diffusion_term) + abs(trend_term)
+        if total_change > 0:
+            mr_ratio = abs(mean_reversion_term) / total_change * 100
+            diff_ratio = abs(diffusion_term) / total_change * 100
+            trend_ratio = abs(trend_term) / total_change * 100
+        else:
+            mr_ratio = diff_ratio = trend_ratio = 0
+
+        logger.info(
+            f"[汇率计算] 当前: {current_rate:.4f} -> 新汇率: {next_rate:.4f} (变化: {dS:+.4f}) | "
+            f"趋势: {trend_name}(强度:{self._trend_strength:.2%},剩余:{self._state_duration}天) | "
+            f"均值回归: {mean_reversion_term:+.4f}({mr_ratio:.1f}%) | "
+            f"随机波动: {diffusion_term:+.4f}({diff_ratio:.1f}%,dW={dW:.3f}) | "
+            f"趋势项: {trend_term:+.4f}({trend_ratio:.1f}%)"
+        )
+
+        # 如果启用了趋势模式，输出概率配置
+        if self.trend_mode == "random":
+            total_prob = (
+                self.trend_bull_probability 
+                + self.trend_bear_probability 
+                + self.trend_range_probability
+            )
+            if total_prob > 0:
+                logger.info(
+                    f"[汇率计算] 趋势概率配置: 牛市{self.trend_bull_probability/total_prob*100:.1f}% | "
+                    f"熊市{self.trend_bear_probability/total_prob*100:.1f}% | "
+                    f"震荡{self.trend_range_probability/total_prob*100:.1f}%"
+                )
 
     def calculate_buy_cost(self, amount: float, rate: float) -> float:
         """计算购买群主货币所需货币
