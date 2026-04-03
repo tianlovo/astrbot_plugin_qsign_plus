@@ -116,7 +116,7 @@ class CardRenderer:
         )
 
         # 财富等级信息（基于实时身价）
-        wealth_level, user_base_rate = await self.wealth_system.get_wealth_info_realtime(
+        wealth_level, user_base_rate = await self.wealth_system.get_wealth_info(
             group_id, user_data, user_id
         )
 

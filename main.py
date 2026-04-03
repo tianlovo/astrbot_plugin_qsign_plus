@@ -30,7 +30,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.12.4",
+    "2.12.5",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -727,7 +727,7 @@ class ContractSystem(Star):
             # Send text-only sign-in result with full details
             user_name = await self._get_user_name_from_platform(event, user_id)
             # 使用实时身价计算财富等级
-            wealth_level, _ = await self.wealth_system.get_wealth_info_realtime(
+            wealth_level, _ = await self.wealth_system.get_wealth_info(
                 group_id, user_data, user_id
             )
             currency = self._get_currency_name()
@@ -956,7 +956,7 @@ class ContractSystem(Star):
             if is_detailed:
                 # Detailed info output
                 # 使用实时身价计算财富等级
-                wealth_level, _ = await self.wealth_system.get_wealth_info_realtime(
+                wealth_level, _ = await self.wealth_system.get_wealth_info(
                     group_id, user_data, user_id
                 )
                 from datetime import datetime
@@ -1006,7 +1006,7 @@ class ContractSystem(Star):
             else:
                 # Simple info output (default)
                 # 使用实时身价计算财富等级
-                wealth_level, _ = await self.wealth_system.get_wealth_info_realtime(
+                wealth_level, _ = await self.wealth_system.get_wealth_info(
                     group_id, user_data, user_id
                 )
 

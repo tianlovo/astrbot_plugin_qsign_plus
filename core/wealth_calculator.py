@@ -67,20 +67,22 @@ class WealthCalculator:
         self.data_manager = data_manager
         self.config = config
 
-    def get_wealth_level(self, user_data: dict) -> tuple:
-        """获取财富等级信息（基于现金+银行）
+    async def get_wealth_level(
+        self, group_id: str, user_data: dict, user_id: str
+    ) -> tuple:
+        """获取财富等级信息（基于实时身价）
 
         Args:
+            group_id: 群ID
             user_data: 用户数据
+            user_id: 用户ID
 
         Returns:
             (等级名称, 等级加成率) 元组
         """
-        total = user_data.get("coins", 0.0) + user_data.get("bank", 0.0)
-        for min_coin, name, rate in reversed(WEALTH_LEVELS):
-            if total >= min_coin:
-                return name, rate
-        return "平民", 0.25
+        # 使用实时身价计算财富等级
+        wealth_value = await self.calculate_wealth_value(group_id, user_data, user_id)
+        return await self.get_wealth_level_by_value(wealth_value)
 
     async def get_wealth_level_by_value(self, wealth_value: float) -> tuple:
         """根据身价获取财富等级信息
@@ -96,10 +98,10 @@ class WealthCalculator:
                 return name, rate
         return "平民", 0.25
 
-    async def get_wealth_level_realtime(
+    async def get_max_contractor_limit(
         self, group_id: str, user_data: dict, user_id: str
-    ) -> tuple:
-        """获取实时财富等级信息（基于实时身价）
+    ) -> int:
+        """获取用户最大可雇佣数量
 
         Args:
             group_id: 群ID
@@ -107,22 +109,9 @@ class WealthCalculator:
             user_id: 用户ID
 
         Returns:
-            (等级名称, 等级加成率) 元组
-        """
-        # 使用实时身价计算财富等级
-        wealth_value = await self.calculate_wealth_value(group_id, user_data, user_id)
-        return await self.get_wealth_level_by_value(wealth_value)
-
-    def get_max_contractor_limit(self, user_data: dict) -> int:
-        """获取用户最大可雇佣数量
-
-        Args:
-            user_data: 用户数据
-
-        Returns:
             最大可雇佣数量，-1表示无限制
         """
-        wealth_name, _ = self.get_wealth_level(user_data)
+        wealth_name, _ = await self.get_wealth_level(group_id, user_data, user_id)
         return WEALTH_CONTRACTOR_LIMITS.get(wealth_name, 3)
 
     async def calculate_wealth_value(
