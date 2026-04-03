@@ -115,8 +115,10 @@ class CardRenderer:
             else ""
         )
 
-        # 财富等级信息
-        wealth_level, user_base_rate = self.wealth_system.get_wealth_info(user_data)
+        # 财富等级信息（基于实时身价）
+        wealth_level, user_base_rate = await self.wealth_system.get_wealth_info_realtime(
+            group_id, user_data, user_id
+        )
 
         render_data = {
             "font_path": font_path,

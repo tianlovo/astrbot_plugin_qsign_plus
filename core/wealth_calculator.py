@@ -68,7 +68,7 @@ class WealthCalculator:
         self.config = config
 
     def get_wealth_level(self, user_data: dict) -> tuple:
-        """获取财富等级信息
+        """获取财富等级信息（基于现金+银行）
 
         Args:
             user_data: 用户数据
@@ -81,6 +81,37 @@ class WealthCalculator:
             if total >= min_coin:
                 return name, rate
         return "平民", 0.25
+
+    async def get_wealth_level_by_value(self, wealth_value: float) -> tuple:
+        """根据身价获取财富等级信息
+
+        Args:
+            wealth_value: 身价数值
+
+        Returns:
+            (等级名称, 等级加成率) 元组
+        """
+        for min_coin, name, rate in reversed(WEALTH_LEVELS):
+            if wealth_value >= min_coin:
+                return name, rate
+        return "平民", 0.25
+
+    async def get_wealth_level_realtime(
+        self, group_id: str, user_data: dict, user_id: str
+    ) -> tuple:
+        """获取实时财富等级信息（基于实时身价）
+
+        Args:
+            group_id: 群ID
+            user_data: 用户数据
+            user_id: 用户ID
+
+        Returns:
+            (等级名称, 等级加成率) 元组
+        """
+        # 使用实时身价计算财富等级
+        wealth_value = await self.calculate_wealth_value(group_id, user_data, user_id)
+        return await self.get_wealth_level_by_value(wealth_value)
 
     def get_max_contractor_limit(self, user_data: dict) -> int:
         """获取用户最大可雇佣数量

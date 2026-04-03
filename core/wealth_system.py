@@ -71,7 +71,7 @@ class WealthSystem:
         self.calculator = WealthCalculator(data_manager, config)
 
     def get_wealth_info(self, user_data: dict) -> tuple:
-        """获取财富等级信息
+        """获取财富等级信息（基于现金+银行）
 
         Args:
             user_data: 用户数据
@@ -80,6 +80,23 @@ class WealthSystem:
             (等级名称, 等级加成率) 元组
         """
         return self.calculator.get_wealth_level(user_data)
+
+    async def get_wealth_info_realtime(
+        self, group_id: str, user_data: dict, user_id: str
+    ) -> tuple:
+        """获取实时财富等级信息（基于实时身价）
+
+        Args:
+            group_id: 群ID
+            user_data: 用户数据
+            user_id: 用户ID
+
+        Returns:
+            (等级名称, 等级加成率) 元组
+        """
+        return await self.calculator.get_wealth_level_realtime(
+            group_id, user_data, user_id
+        )
 
     async def calculate_wealth_value(
         self, group_id: str, user_data: dict, user_id: str

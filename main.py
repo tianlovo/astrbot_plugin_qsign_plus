@@ -30,7 +30,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.12.3",
+    "2.12.4",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -726,7 +726,10 @@ class ContractSystem(Star):
         if not enable_image_card:
             # Send text-only sign-in result with full details
             user_name = await self._get_user_name_from_platform(event, user_id)
-            wealth_level, _ = self.wealth_system.get_wealth_info(user_data)
+            # 使用实时身价计算财富等级
+            wealth_level, _ = await self.wealth_system.get_wealth_info_realtime(
+                group_id, user_data, user_id
+            )
             currency = self._get_currency_name()
 
             sign_text = "【签到成功】\n"
@@ -952,7 +955,10 @@ class ContractSystem(Star):
 
             if is_detailed:
                 # Detailed info output
-                wealth_level, _ = self.wealth_system.get_wealth_info(user_data)
+                # 使用实时身价计算财富等级
+                wealth_level, _ = await self.wealth_system.get_wealth_info_realtime(
+                    group_id, user_data, user_id
+                )
                 from datetime import datetime
 
                 now = datetime.now(SHANGHAI_TZ)
@@ -999,8 +1005,10 @@ class ContractSystem(Star):
                     info_text += f"🔒 雇主: {owner_name}"
             else:
                 # Simple info output (default)
-                # 获取财富等级
-                wealth_level, _ = self.wealth_system.get_wealth_info(user_data)
+                # 使用实时身价计算财富等级
+                wealth_level, _ = await self.wealth_system.get_wealth_info_realtime(
+                    group_id, user_data, user_id
+                )
 
                 info_text = f"【{user_name} 的资产】\n"
                 info_text += f"💎 财富等级: {wealth_level}\n"
