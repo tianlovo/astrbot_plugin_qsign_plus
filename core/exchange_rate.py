@@ -182,8 +182,13 @@ class ExchangeRateCalculator:
 
         # 输出详细的计算日志
         self._log_calculation_details(
-            current_rate, next_rate, dS, mean_reversion_term, 
-            diffusion_term, trend_term, dW
+            current_rate,
+            next_rate,
+            dS,
+            mean_reversion_term,
+            diffusion_term,
+            trend_term,
+            dW,
         )
 
         # 更新趋势状态持续时间
@@ -195,14 +200,14 @@ class ExchangeRateCalculator:
         return next_rate
 
     def _log_calculation_details(
-        self, 
-        current_rate: float, 
-        next_rate: float, 
+        self,
+        current_rate: float,
+        next_rate: float,
         dS: float,
         mean_reversion_term: float,
         diffusion_term: float,
         trend_term: float,
-        dW: float
+        dW: float,
     ) -> None:
         """输出汇率计算详细日志
 
@@ -239,15 +244,15 @@ class ExchangeRateCalculator:
         # 如果启用了趋势模式，输出概率配置
         if self.trend_mode == "random":
             total_prob = (
-                self.trend_bull_probability 
-                + self.trend_bear_probability 
+                self.trend_bull_probability
+                + self.trend_bear_probability
                 + self.trend_range_probability
             )
             if total_prob > 0:
                 logger.info(
-                    f"[汇率计算] 趋势概率配置: 牛市{self.trend_bull_probability/total_prob*100:.1f}% | "
-                    f"熊市{self.trend_bear_probability/total_prob*100:.1f}% | "
-                    f"震荡{self.trend_range_probability/total_prob*100:.1f}%"
+                    f"[汇率计算] 趋势概率配置: 牛市{self.trend_bull_probability / total_prob * 100:.1f}% | "
+                    f"熊市{self.trend_bear_probability / total_prob * 100:.1f}% | "
+                    f"震荡{self.trend_range_probability / total_prob * 100:.1f}%"
                 )
 
     def calculate_buy_cost(self, amount: float, rate: float) -> float:

@@ -76,11 +76,24 @@ class ExchangeRateService:
 
     async def _run_service(self) -> None:
         """运行汇率更新服务的主循环"""
-        # 等待数据库初始化完成
+        # 等待数据库初始化完成（最多等待60秒）
+        init_wait_time = 0
+        max_wait_time = 60  # 最大等待60秒
+
         while not self._data_manager.is_db_initialized():
             if self._stop_event.is_set():
+                logger.info("[汇率服务] 服务在数据库初始化前被停止")
+                return
+            if init_wait_time >= max_wait_time:
+                logger.warning(
+                    f"[汇率服务] 等待数据库初始化超时({max_wait_time}秒)，服务未启动"
+                )
                 return
             await asyncio.sleep(1)
+            init_wait_time += 1
+
+        if init_wait_time > 0:
+            logger.info(f"[汇率服务] 数据库初始化完成，等待了 {init_wait_time} 秒")
 
         logger.info("[汇率服务] 汇率更新循环已启动")
 
@@ -120,7 +133,7 @@ class ExchangeRateService:
         """更新所有启用群组的汇率"""
         # 再次检查数据库是否已初始化（防止初始化状态变化）
         if not self._data_manager.is_db_initialized():
-            logger.warning("[汇率服务] 数据库未初始化，跳过本次汇率更新")
+            logger.debug("[汇率服务] 数据库尚未初始化，跳过本次汇率更新")
             return
 
         stock_config = self._config.get("stock_market", {})
