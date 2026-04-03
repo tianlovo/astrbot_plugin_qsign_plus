@@ -19,6 +19,7 @@ from .services.exchange_rate_service import ExchangeRateService
 from .services.image_cache import ImageCacheService
 from .utils.helpers import (
     get_first_at_user,
+    get_plain_text_from_message,
     get_target_at_user,
     is_at_bot,
     is_group_allowed,
@@ -719,16 +720,14 @@ class ContractSystem(Star):
             return
 
         # 解析数量（支持忽略空格，限制一位小数）
-        message_text = event.message_str
+        # 从消息中提取纯文本（不包括At组件），避免将QQ号误解析为数量
+        message_text = get_plain_text_from_message(event)
         # 移除所有空格
         message_text = message_text.replace(" ", "").replace("\u3000", "")
         import re
 
-        # 严格匹配："购买" + 可选的@提及 + 数字
-        # @提及可能是 [@QQ号] 或 @QQ号 格式
-        # 数字必须是独立的部分，不能是QQ号的一部分
-        # 模式：购买[@数字]数字 或 购买@数字数字 或 购买数字
-        amount_match = re.search(r"购买(?:\[?@\d+\]?)?([\d.]+)$", message_text)
+        # 严格匹配："购买" + 数字（数字必须在消息末尾）
+        amount_match = re.search(r"购买([\d.]+)$", message_text)
         if not amount_match:
             await send_text_reply(event, "请指定购买数量，例如：购买 @群主 10.5")
             return
@@ -805,16 +804,14 @@ class ContractSystem(Star):
             return
 
         # 解析数量（支持忽略空格，限制一位小数）
-        message_text = event.message_str
+        # 从消息中提取纯文本（不包括At组件），避免将QQ号误解析为数量
+        message_text = get_plain_text_from_message(event)
         # 移除所有空格
         message_text = message_text.replace(" ", "").replace("\u3000", "")
         import re
 
-        # 严格匹配："出售" + 可选的@提及 + 数字
-        # @提及可能是 [@QQ号] 或 @QQ号 格式
-        # 数字必须是独立的部分，不能是QQ号的一部分
-        # 模式：出售[@数字]数字 或 出售@数字数字 或 出售数字
-        amount_match = re.search(r"出售(?:\[?@\d+\]?)?([\d.]+)$", message_text)
+        # 严格匹配："出售" + 数字（数字必须在消息末尾）
+        amount_match = re.search(r"出售([\d.]+)$", message_text)
         if not amount_match:
             await send_text_reply(event, "请指定出售数量，例如：出售 @群主 10.5")
             return
