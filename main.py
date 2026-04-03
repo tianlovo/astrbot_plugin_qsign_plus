@@ -11,6 +11,7 @@ from astrbot.api.star import Context, Star, register
 
 from .core.data_manager import DataManager
 from .core.wealth_system import WealthSystem
+from .core.wealth_calculator import WealthCalculator
 from .services.card_renderer import CardRenderer
 from .services.image_cache import ImageCacheService
 from .utils.helpers import (
@@ -29,7 +30,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.11.8",
+    "2.11.9",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -40,6 +41,7 @@ class ContractSystem(Star):
         # Initialize services
         self.data_manager = DataManager(PLUGIN_DIR)
         self.wealth_system = WealthSystem(self.data_manager, config)
+        self.wealth_calculator = WealthCalculator(self.data_manager, config)
         self.image_cache = ImageCacheService()
         self.card_renderer = CardRenderer(
             PLUGIN_DIR,
@@ -277,19 +279,10 @@ class ContractSystem(Star):
             )
             return
 
-        base_cost = await self.wealth_system.calculate_dynamic_wealth_value(
-            group_id, target_data, target_id
+        # 使用身价计算器计算购买价格
+        base_cost = await self.wealth_calculator.calculate_purchase_price(
+            group_id, target_data, target_id, target_role
         )
-
-        # 确保不低于最低购买价格
-        trade_config = self.config.get("trade", {})
-        min_purchase_price = trade_config.get("min_purchase_price", 100)
-        base_cost = max(base_cost, min_purchase_price)
-
-        # 管理员和群主享受价格加成（在最低价格基础上）
-        if target_role in ["owner", "admin"]:
-            admin_bonus = admin_config.get("admin_price_bonus", 0.5)
-            base_cost *= 1 + admin_bonus
 
         total_cost = base_cost
         original_owner_id = target_data.get("contracted_by")
@@ -403,19 +396,14 @@ class ContractSystem(Star):
         # 如果没有at任何人，或at自己，查询自己的身价
         if not target_id or target_id == user_id:
             user_data = await self.data_manager.get_user_data(group_id, user_id)
-            my_price = await self.wealth_system.calculate_dynamic_wealth_value(
-                group_id, user_data, user_id
-            )
 
             # 获取自己的角色（用于显示管理员加成）
             my_role = await self._get_user_role(event, user_id)
-            admin_config = self.config.get("admin", {})
 
-            # 计算显示价格（包含管理员加成）
-            display_price = my_price
-            if my_role in ["owner", "admin"]:
-                admin_bonus = admin_config.get("admin_price_bonus", 0.5)
-                display_price *= 1 + admin_bonus
+            # 使用身价计算器计算购买价格（包含管理员加成）
+            display_price = await self.wealth_calculator.calculate_purchase_price(
+                group_id, user_data, user_id, my_role
+            )
 
             role_text = ""
             if my_role == "owner":
@@ -451,15 +439,10 @@ class ContractSystem(Star):
             await send_text_reply(event, "该用户已经是您的雇员了。")
             return
 
-        # 计算基础身价
-        base_cost = await self.wealth_system.calculate_dynamic_wealth_value(
-            group_id, target_data, target_id
+        # 使用身价计算器计算购买价格
+        base_cost = await self.wealth_calculator.calculate_purchase_price(
+            group_id, target_data, target_id, target_role
         )
-
-        # 管理员和群主享受价格加成
-        if target_role in ["owner", "admin"]:
-            admin_bonus = admin_config.get("admin_price_bonus", 0.5)
-            base_cost *= 1 + admin_bonus
 
         total_cost = base_cost
         original_owner_id = target_data.get("contracted_by")
@@ -530,8 +513,9 @@ class ContractSystem(Star):
 
         trade_config = self.config.get("trade", {})
         sell_rate = trade_config.get("sell_return_rate", 0.8)
+        # 使用身价计算器计算出售价格
         sell_price = (
-            await self.wealth_system.calculate_dynamic_wealth_value(
+            await self.wealth_calculator.calculate_dynamic_wealth_value(
                 group_id, target_data, target_id
             )
             * sell_rate
@@ -684,12 +668,26 @@ class ContractSystem(Star):
             await send_text_reply(event, "系统维护中，暂时无法使用此功能，请稍后再试。")
             return
 
-        # Get leaderboard from database
-        top_10_users = await self.data_manager.get_leaderboard(group_id, limit=10)
+        # 获取群所有用户数据并计算实时身价
+        group_users = await self.data_manager.get_group_users(group_id)
 
-        if not top_10_users:
+        if not group_users:
             await send_text_reply(event, "本群暂无签到数据，无法生成排行榜。")
             return
+
+        # 计算每个用户的实时身价
+        user_wealth_list = []
+        for user_id in group_users:
+            user_data = await self.data_manager.get_user_data(group_id, user_id)
+            # 使用实时身价计算
+            total_wealth = await self.wealth_calculator.calculate_wealth_value(
+                group_id, user_data, user_id
+            )
+            user_wealth_list.append((user_id, total_wealth))
+
+        # 按身价排序并取前10
+        user_wealth_list.sort(key=lambda x: x[1], reverse=True)
+        top_10_users = user_wealth_list[:10]
 
         user_ids_to_fetch = [user[0] for user in top_10_users]
         name_coroutines = [
@@ -739,20 +737,13 @@ class ContractSystem(Star):
 
         if purchase_price <= 0:
             # 没有购买记录（旧数据兼容），计算当前价格并记录
-            current_price = await self.wealth_system.calculate_dynamic_wealth_value(
-                group_id, user_data, user_id
-            )
-
             # 获取目标用户角色（用于计算管理员价格加成）
             target_role = await self._get_user_role(event, user_id)
-            admin_config = self.config.get("admin", {})
 
-            # 管理员和群主享受价格加成
-            if target_role in ["owner", "admin"]:
-                admin_bonus = admin_config.get("admin_price_bonus", 0.5)
-                current_price *= 1 + admin_bonus
-
-            purchase_price = current_price
+            # 使用身价计算器计算购买价格
+            purchase_price = await self.wealth_calculator.calculate_purchase_price(
+                group_id, user_data, user_id, target_role
+            )
 
             # 记录到购买历史（兼容旧数据）
             await self.data_manager.record_purchase(
@@ -828,8 +819,10 @@ class ContractSystem(Star):
                 user_data, group_id, admin_ids
             )
 
-            # Format user info text
-            total_wealth = user_data["coins"] + user_data["bank"]
+            # 使用实时身价计算
+            total_wealth = await self.wealth_calculator.calculate_wealth_value(
+                group_id, user_data, user_id
+            )
             currency = self._get_currency_name()
 
             if is_detailed:
@@ -867,43 +860,43 @@ class ContractSystem(Star):
                 )
 
                 # Add contractor info
-                if user_data["contractors"]:
-                    contractor_names = []
-                    for cid in user_data["contractors"]:
-                        cname = await self._get_user_name_from_platform(event, cid)
-                        contractor_names.append(cname)
-                    info_text += f"👥 雇员 ({len(user_data['contractors'])}人): {', '.join(contractor_names)}\n"
+            if user_data.get("contractors"):
+                contractor_names = []
+                for cid in user_data["contractors"]:
+                    cname = await self._get_user_name_from_platform(event, cid)
+                    contractor_names.append(cname)
+                info_text += f"👥 雇员 ({len(user_data['contractors'])}人): {', '.join(contractor_names)}\n"
 
-                if user_data["contracted_by"]:
-                    owner_name = await self._get_user_name_from_platform(
-                        event, user_data["contracted_by"]
-                    )
-                    info_text += f"🔒 雇主: {owner_name}"
-            else:
-                # Simple info output (default)
-                info_text = f"【{user_name} 的资产】\n"
-                info_text += f"💰 现金: {user_data['coins']:.1f} {currency}\n"
-                info_text += f"🏦 银行: {user_data['bank']:.1f} {currency}\n"
-                info_text += f"💎 身价: {total_wealth:.1f} {currency}\n"
+            if user_data.get("contracted_by"):
+                owner_name = await self._get_user_name_from_platform(
+                    event, user_data["contracted_by"]
+                )
+                info_text += f"🔒 雇主: {owner_name}"
+        else:
+            # Simple info output (default)
+            info_text = f"【{user_name} 的资产】\n"
+            info_text += f"💰 现金: {user_data['coins']:.1f} {currency}\n"
+            info_text += f"🏦 银行: {user_data['bank']:.1f} {currency}\n"
+            info_text += f"💎 身价: {total_wealth:.1f} {currency}\n"
 
-                # Add contractor info
-                if user_data["contractors"]:
-                    contractor_names = []
-                    for cid in user_data["contractors"]:
-                        cname = await self._get_user_name_from_platform(event, cid)
-                        contractor_names.append(cname)
-                    info_text += f"👥 雇员: {', '.join(contractor_names)}\n"
+            # Add contractor info
+            if user_data.get("contractors"):
+                contractor_names = []
+                for cid in user_data["contractors"]:
+                    cname = await self._get_user_name_from_platform(event, cid)
+                    contractor_names.append(cname)
+                info_text += f"👥 雇员: {', '.join(contractor_names)}\n"
 
-                if user_data["contracted_by"]:
-                    owner_name = await self._get_user_name_from_platform(
-                        event, user_data["contracted_by"]
-                    )
-                    info_text += f"🔒 雇主: {owner_name}\n"
+            if user_data.get("contracted_by"):
+                owner_name = await self._get_user_name_from_platform(
+                    event, user_data["contracted_by"]
+                )
+                info_text += f"🔒 雇主: {owner_name}\n"
 
-                info_text += f"📈 明日预计: {income_info['total']:.1f} {currency}"
+            info_text += f"📈 明日预计: {income_info['total']:.1f} {currency}"
 
-            await send_text_reply(event, info_text)
-            return
+        await send_text_reply(event, info_text)
+        return
 
         # Check if there's already a query in progress for this user
         if group_id in self._query_states and user_id in self._query_states[group_id]:
@@ -924,8 +917,10 @@ class ContractSystem(Star):
             user_data = await self.data_manager.get_user_data(group_id, user_id)
             user_name = await self._get_user_name_from_platform(event, user_id)
 
-            # Format user info text
-            total_wealth = user_data["coins"] + user_data["bank"]
+            # 使用实时身价计算
+            total_wealth = await self.wealth_calculator.calculate_wealth_value(
+                group_id, user_data, user_id
+            )
             currency = self._get_currency_name()
             info_text = f"【{user_name} 的资产信息】\n"
             info_text += f"💰 现金: {user_data['coins']:.1f} {currency}\n"
@@ -933,21 +928,21 @@ class ContractSystem(Star):
             info_text += f"💎 身价: {total_wealth:.1f} {currency}\n"
 
             # Add contractor info
-            if user_data["contractors"]:
+            if user_data.get("contractors"):
                 contractor_names = []
                 for cid in user_data["contractors"]:
                     cname = await self._get_user_name_from_platform(event, cid)
                     contractor_names.append(cname)
                 info_text += f"👥 雇员: {', '.join(contractor_names)}\n"
 
-            if user_data["contracted_by"]:
+            if user_data.get("contracted_by"):
                 owner_name = await self._get_user_name_from_platform(
                     event, user_data["contracted_by"]
                 )
                 info_text += f"🔒 雇主: {owner_name}\n"
 
             # Add consecutive sign-in info
-            if user_data["consecutive"] > 0:
+            if user_data.get("consecutive", 0) > 0:
                 info_text += f"📅 连续签到: {user_data['consecutive']} 天\n"
 
             info_text += "\n正在生成图片卡片，请稍候..."

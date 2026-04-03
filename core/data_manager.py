@@ -172,6 +172,17 @@ class DataManager:
         """
         return await self.db.get_leaderboard(group_id, limit)
 
+    async def get_group_users(self, group_id: str) -> list[str]:
+        """获取群所有用户ID列表
+
+        Args:
+            group_id: 群ID
+
+        Returns:
+            用户ID列表
+        """
+        return await self.db.get_group_users(group_id)
+
     async def get_purchase_count(self, user_id: str) -> int:
         """获取用户被购买次数
 

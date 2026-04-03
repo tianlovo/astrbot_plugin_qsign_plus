@@ -6,6 +6,8 @@
 
 from astrbot.api import logger
 
+from .wealth_calculator import WealthCalculator
+
 
 # 财富等级配置 (10个阶段)
 WEALTH_LEVELS = [
@@ -66,6 +68,7 @@ class WealthSystem:
         """
         self.data_manager = data_manager
         self.config = config
+        self.calculator = WealthCalculator(data_manager, config)
 
     def get_wealth_info(self, user_data: dict) -> tuple:
         """获取财富等级信息
@@ -76,11 +79,7 @@ class WealthSystem:
         Returns:
             (等级名称, 等级加成率) 元组
         """
-        total = user_data.get("coins", 0.0) + user_data.get("bank", 0.0)
-        for min_coin, name, rate in reversed(WEALTH_LEVELS):
-            if total >= min_coin:
-                return name, rate
-        return "平民", 0.25
+        return self.calculator.get_wealth_level(user_data)
 
     async def calculate_wealth_value(
         self, group_id: str, user_data: dict, user_id: str
@@ -99,42 +98,7 @@ class WealthSystem:
         Returns:
             身价数值
         """
-        # 基础身价：现金 + 银行存款
-        total = user_data.get("coins", 0.0) + user_data.get("bank", 0.0)
-
-        # 加上所有雇员的潜在价值
-        contractors = user_data.get("contractors", [])
-        trade_config = self.config.get("trade", {})
-        sell_return_rate = trade_config.get("sell_return_rate", 0.8)
-        redeem_return_rate = trade_config.get("redeem_return_rate", 0.5)
-
-        for contractor_id in contractors:
-            contractor_data = await self.data_manager.get_user_data(
-                group_id, contractor_id
-            )
-            # 计算雇员当前身价（购买价格）
-            contractor_value = await self.calculate_dynamic_wealth_value(
-                group_id, contractor_data, contractor_id
-            )
-
-            # 雇员潜在价值 = max(出售获得的钱, 赎身时雇主获得的钱)
-            # 出售获得的钱 = 雇员身价 × 出售返还率
-            sell_value = contractor_value * sell_return_rate
-            # 赎身时雇主获得的钱 = 赎身费用 × 赎身返还率
-            # 赎身费用 = 购买记录中的价格
-            redeem_cost = await self.data_manager.get_latest_purchase_price(
-                group_id, contractor_id
-            )
-            if redeem_cost <= 0:
-                # 如果没有购买记录，使用当前身价（兼容旧数据）
-                redeem_cost = contractor_value
-            redeem_value = redeem_cost * redeem_return_rate
-
-            # 取两者中的较大值作为潜在价值
-            contractor_potential_value = max(sell_value, redeem_value)
-            total += contractor_potential_value
-
-        return total
+        return await self.calculator.calculate_wealth_value(group_id, user_data, user_id)
 
     async def calculate_dynamic_wealth_value(
         self, group_id: str, user_data: dict, user_id: str
@@ -149,17 +113,7 @@ class WealthSystem:
         Returns:
             身价数值
         """
-        # 使用身价计算（包含雇员潜在价值）
-        total = await self.calculate_wealth_value(group_id, user_data, user_id)
-        base_value = WEALTH_BASE_VALUES["平民"]
-        for min_coin, name, _ in reversed(WEALTH_LEVELS):
-            if total >= min_coin:
-                base_value = WEALTH_BASE_VALUES[name]
-                break
-        contract_level = await self.data_manager.get_purchase_count(user_id)
-        contract_config = self.config.get("contract", {})
-        price_bonus = contract_config.get("contract_level_price_bonus", 0.15)
-        return base_value * (1 + contract_level * price_bonus)
+        return await self.calculator.calculate_dynamic_wealth_value(group_id, user_data, user_id)
 
     def get_max_contractor_limit(self, user_data: dict) -> int:
         """获取用户最大可雇佣数量
@@ -170,8 +124,7 @@ class WealthSystem:
         Returns:
             最大可雇佣数量，-1表示无限制
         """
-        wealth_name, _ = self.get_wealth_info(user_data)
-        return WEALTH_CONTRACTOR_LIMITS.get(wealth_name, 3)
+        return self.calculator.get_max_contractor_limit(user_data)
 
     async def get_total_contractor_rate(
         self, group_id: str, contractor_ids: list, admin_ids: list = None
@@ -186,39 +139,7 @@ class WealthSystem:
         Returns:
             总加成率
         """
-        total_rate = 0.0
-        contract_config = self.config.get("contract", {})
-        rate_bonus = contract_config.get("contract_level_rate_bonus", 0.075)
-        admin_bonus = contract_config.get("admin_contractor_bonus", 0.1)
-        wealth_value_rate = contract_config.get("wealth_value_bonus_rate", 0.001)
-
-        admin_ids = admin_ids or []
-
-        for contractor_id in contractor_ids:
-            contractor_data = await self.data_manager.get_user_data(
-                group_id, contractor_id
-            )
-            _, base_rate = self.get_wealth_info(contractor_data)
-            contract_level = await self.data_manager.get_purchase_count(contractor_id)
-
-            # 基础加成 = 财富等级加成 + 雇佣次数加成
-            contractor_rate = base_rate + (contract_level * rate_bonus)
-
-            # 管理员额外加成（群管理员）
-            if contractor_id in admin_ids:
-                contractor_rate += admin_bonus
-
-            # 身价加成 = 雇员身价 / 1000 * 身价系数
-            # 身价包含现金+银行存款+雇员潜在价值
-            contractor_wealth = await self.calculate_wealth_value(
-                group_id, contractor_data, contractor_id
-            )
-            wealth_bonus = contractor_wealth / 1000 * wealth_value_rate
-            contractor_rate += wealth_bonus
-
-            total_rate += contractor_rate
-
-        return total_rate
+        return await self.calculator.get_total_contractor_rate(group_id, contractor_ids, admin_ids)
 
     async def calculate_sign_income(
         self,
@@ -238,32 +159,8 @@ class WealthSystem:
         Returns:
             (最终收益, 原始收益, 基础收益, 雇员加成, 连续签到加成, 银行利息)
         """
-        _, user_base_rate = self.get_wealth_info(user_data)
-        contractor_dynamic_rates = await self.get_total_contractor_rate(
-            group_id, user_data["contractors"], admin_ids
-        )
-
-        consecutive_bonus = 10 * (user_data["consecutive"] - 1)
-        base_with_bonus = BASE_INCOME * (1 + user_base_rate)
-        contract_bonus = base_with_bonus * contractor_dynamic_rates
-
-        earned = base_with_bonus + contract_bonus + consecutive_bonus
-        original_earned = earned
-
-        if is_penalized:
-            contract_config = self.config.get("contract", {})
-            income_rate = contract_config.get("employed_income_rate", 0.7)
-            earned *= income_rate
-
-        interest = user_data["bank"] * 0.01
-
-        return (
-            earned + interest,
-            original_earned,
-            base_with_bonus,
-            contract_bonus,
-            consecutive_bonus,
-            interest,
+        return await self.calculator.calculate_sign_income(
+            user_data, group_id, is_penalized, admin_ids
         )
 
     async def calculate_tomorrow_income(
@@ -279,22 +176,4 @@ class WealthSystem:
         Returns:
             收入明细字典
         """
-        _, user_base_rate = self.get_wealth_info(user_data)
-        base_with_bonus = BASE_INCOME * (1 + user_base_rate)
-        contractor_dynamic_rates = await self.get_total_contractor_rate(
-            group_id, user_data["contractors"], admin_ids
-        )
-        contract_bonus = base_with_bonus * contractor_dynamic_rates
-        consecutive_bonus = 10 * user_data["consecutive"]
-        tomorrow_interest = user_data["bank"] * 0.01
-
-        return {
-            "total": base_with_bonus
-            + contract_bonus
-            + consecutive_bonus
-            + tomorrow_interest,
-            "base": base_with_bonus,
-            "contract_bonus": contract_bonus,
-            "consecutive_bonus": consecutive_bonus,
-            "interest": tomorrow_interest,
-        }
+        return await self.calculator.calculate_tomorrow_income(user_data, group_id, admin_ids)

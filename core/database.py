@@ -377,6 +377,31 @@ class QsignDatabase:
             logger.error(f"[{self.plugin_name}] 获取群用户数据失败: {e}")
             return []
 
+    async def get_group_users(self, group_id: str) -> list[str]:
+        """获取群所有用户ID列表
+
+        Args:
+            group_id: 群ID
+
+        Returns:
+            用户ID列表
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            async with self._conn.execute(
+                """
+                SELECT user_id FROM user_wealth WHERE group_id = ?
+                """,
+                (str(group_id),),
+            ) as cursor:
+                rows = await cursor.fetchall()
+                return [row["user_id"] for row in rows]
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 获取群用户列表失败: {e}")
+            return []
+
     async def get_leaderboard(
         self, group_id: str, limit: int = 10
     ) -> list[tuple[str, float]]:
