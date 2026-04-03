@@ -30,7 +30,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.12.0",
+    "2.12.1",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -375,13 +375,18 @@ class ContractSystem(Star):
 
     @filter.regex(r"^详细价格\s*")
     async def detailed_price(self, event: AstrMessageEvent):
-        """查询购买指定成员的详细价格（调试模式）"""
+        """查询购买指定成员的详细价格（调试模式，仅维护模式可用）"""
         if not is_at_bot(event):
             return
 
         group_id = str(event.message_obj.group_id)
         basic_config = self.config.get("basic", {})
         if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
+            return
+
+        # 检查维护模式 - 详细价格指令仅在维护模式下可用
+        if not self._is_maintenance_mode():
+            await send_text_reply(event, "该指令仅在系统维护模式下可用。")
             return
 
         user_id = str(event.get_sender_id())
@@ -411,8 +416,13 @@ class ContractSystem(Star):
         # 获取目标用户数据
         target_data = await self.data_manager.get_user_data(group_id, target_id)
 
+        # 获取身价详细分解
+        wealth_detailed = await self.wealth_calculator.calculate_wealth_value_detailed(
+            group_id, target_data, target_id
+        )
+
         # 获取详细价格分解
-        detailed = await self.wealth_calculator.calculate_purchase_price_detailed(
+        price_detailed = await self.wealth_calculator.calculate_purchase_price_detailed(
             group_id, target_data, target_id, target_role
         )
 
@@ -426,36 +436,67 @@ class ContractSystem(Star):
             role_text = "（管理员）"
 
         info_text = f"💰 {target_name}{role_text} 的详细价格信息\n"
-        info_text += "=" * 30 + "\n\n"
+        info_text += "=" * 40 + "\n\n"
 
-        info_text += "【基础数据】\n"
-        info_text += f"  身价: {detailed['wealth_value']:.1f} {currency}\n"
-        info_text += f"  财富等级: {detailed['wealth_level']}\n"
-        info_text += f"  契约等级: {detailed['contract_level']}\n\n"
+        # ===== 身价详细拆解 =====
+        info_text += "【身价详细拆解】\n"
+        info_text += f"  现金: {wealth_detailed['coins']:.1f} {currency}\n"
+        info_text += f"  银行存款: {wealth_detailed['bank']:.1f} {currency}\n"
+        info_text += f"  基础身价(现金+银行): {wealth_detailed['base_wealth']:.1f} {currency}\n\n"
 
+        # 雇员潜在价值详细拆解
+        if wealth_detailed['contractor_count'] > 0:
+            info_text += f"  雇员数量: {wealth_detailed['contractor_count']} 人\n"
+            info_text += f"  雇员总潜在价值: {wealth_detailed['total_contractor_value']:.1f} {currency}\n\n"
+
+            info_text += "  每个雇员的潜在价值:\n"
+            for i, contractor in enumerate(wealth_detailed['contractor_details'], 1):
+                contractor_name = await self._get_user_name_from_platform(
+                    event, contractor['contractor_id']
+                )
+                info_text += f"    {i}. {contractor_name}\n"
+                info_text += f"       当前身价: {contractor['contractor_value']:.1f} {currency}\n"
+                info_text += f"       出售获得: {contractor['sell_value']:.1f} {currency} "
+                info_text += f"({contractor['contractor_value']:.1f} × {contractor['sell_return_rate']*100:.0f}%)\n"
+                info_text += f"       赎身返还: {contractor['redeem_value']:.1f} {currency} "
+                info_text += f"({contractor['purchase_price']:.1f} × {contractor['redeem_return_rate']*100:.0f}%)\n"
+                info_text += f"       → 潜在价值: {contractor['potential_value']:.1f} {currency} "
+                info_text += f"(max(出售, 赎身))\n\n"
+        else:
+            info_text += "  雇员数量: 0 人\n\n"
+
+        info_text += f"  总身价: {wealth_detailed['total_wealth']:.1f} {currency}\n"
+        info_text += f"  (基础身价 {wealth_detailed['base_wealth']:.1f} + 雇员价值 {wealth_detailed['total_contractor_value']:.1f})\n\n"
+
+        info_text += "-" * 40 + "\n\n"
+
+        # ===== 价格计算过程 =====
         info_text += "【价格计算过程】\n"
-        info_text += f"  1. 基础身价: {detailed['base_value']:.1f} {currency}\n"
-        info_text += f"     (基于财富等级 {detailed['wealth_level']})\n"
-        info_text += f"  2. 契约加成: +{detailed['contract_level']} × {detailed['price_bonus_rate']*100:.0f}%\n"
-        info_text += f"  3. 动态身价: {detailed['dynamic_wealth']:.1f} {currency}\n"
-        info_text += f"     ({detailed['base_value']:.1f} × (1 + {detailed['contract_level']} × {detailed['price_bonus_rate']:.2f}))\n\n"
+        info_text += f"  财富等级: {price_detailed['wealth_level']}\n"
+        info_text += f"  契约等级: {price_detailed['contract_level']}\n\n"
+
+        info_text += f"  1. 基础身价: {price_detailed['base_value']:.1f} {currency}\n"
+        info_text += f"     (基于财富等级 {price_detailed['wealth_level']})\n"
+        info_text += f"  2. 契约加成: +{price_detailed['contract_level']} × {price_detailed['price_bonus_rate']*100:.0f}%\n"
+        info_text += f"  3. 动态身价: {price_detailed['dynamic_wealth']:.1f} {currency}\n"
+        info_text += f"     ({price_detailed['base_value']:.1f} × (1 + {price_detailed['contract_level']} × {price_detailed['price_bonus_rate']:.2f}))\n\n"
 
         info_text += "【价格调整】\n"
-        if detailed['min_price_applied']:
-            info_text += f"  4. 最低价格限制: {detailed['min_purchase_price']:.1f} {currency}\n"
-            info_text += f"     (动态身价 {detailed['dynamic_wealth']:.1f} 低于最低价格，已调整)\n"
+        if price_detailed['min_price_applied']:
+            info_text += f"  4. 最低价格限制: {price_detailed['min_purchase_price']:.1f} {currency}\n"
+            info_text += f"     (动态身价 {price_detailed['dynamic_wealth']:.1f} 低于最低价格，已调整)\n"
         else:
             info_text += f"  4. 最低价格限制: 未触发\n"
-            info_text += f"     (动态身价 {detailed['dynamic_wealth']:.1f} >= 最低价格 {detailed['min_purchase_price']:.1f})\n"
+            info_text += f"     (动态身价 {price_detailed['dynamic_wealth']:.1f} >= 最低价格 {price_detailed['min_purchase_price']:.1f})\n"
 
-        if detailed['admin_bonus_applied']:
-            info_text += f"  5. 管理员加成: +{detailed['admin_bonus_rate']*100:.0f}%\n"
-            info_text += f"     (+{detailed['admin_bonus_amount']:.1f} {currency})\n"
+        if price_detailed['admin_bonus_applied']:
+            info_text += f"  5. 管理员加成: +{price_detailed['admin_bonus_rate']*100:.0f}%\n"
+            info_text += f"     (+{price_detailed['admin_bonus_amount']:.1f} {currency})\n"
         else:
             info_text += f"  5. 管理员加成: 无\n"
 
-        info_text += "\n" + "=" * 30 + "\n"
-        info_text += f"【最终价格】{detailed['final_price']:.1f} {currency}\n"
+        info_text += "\n" + "=" * 40 + "\n"
+        info_text += f"【最终购买价格】{price_detailed['final_price']:.1f} {currency}\n"
 
         await send_text_reply(event, info_text)
 

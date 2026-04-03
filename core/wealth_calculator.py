@@ -145,6 +145,78 @@ class WealthCalculator:
 
         return total
 
+    async def calculate_wealth_value_detailed(
+        self, group_id: str, user_data: dict, user_id: str
+    ) -> dict:
+        """计算身价（详细分解版，用于调试）
+
+        Args:
+            group_id: 群ID
+            user_data: 用户数据
+            user_id: 用户ID
+
+        Returns:
+            包含身价分解详情的字典
+        """
+        trade_config = self.config.get("trade", {})
+        sell_return_rate = trade_config.get("sell_return_rate", 0.8)
+        redeem_return_rate = trade_config.get("redeem_return_rate", 0.5)
+
+        coins = user_data.get("coins", 0.0)
+        bank = user_data.get("bank", 0.0)
+        base_wealth = coins + bank
+
+        contractors = user_data.get("contractors", [])
+        contractor_details = []
+
+        for contractor_id in contractors:
+            contractor_data = await self.data_manager.get_user_data(
+                group_id, contractor_id
+            )
+            # 计算雇员当前身价（购买价格）
+            contractor_value = await self.calculate_dynamic_wealth_value(
+                group_id, contractor_data, contractor_id
+            )
+
+            # 雇员潜在价值 = max(出售获得的钱, 赎身时雇主获得的钱)
+            sell_value = contractor_value * sell_return_rate
+            
+            # 赎身费用 = 购买记录中的价格
+            purchase_price = await self.data_manager.get_latest_purchase_price(
+                group_id, contractor_id
+            )
+            if purchase_price <= 0:
+                # 如果没有购买记录，使用当前身价（兼容旧数据）
+                purchase_price = contractor_value
+            redeem_value = purchase_price * redeem_return_rate
+
+            # 取两者中的较大值作为潜在价值
+            potential_value = max(sell_value, redeem_value)
+            
+            contractor_details.append({
+                "contractor_id": contractor_id,
+                "contractor_value": contractor_value,  # 雇员当前身价
+                "sell_value": sell_value,  # 出售获得的钱
+                "purchase_price": purchase_price,  # 购买记录价格
+                "redeem_value": redeem_value,  # 赎身时雇主获得的钱
+                "potential_value": potential_value,  # 最终潜在价值
+                "sell_return_rate": sell_return_rate,
+                "redeem_return_rate": redeem_return_rate,
+            })
+
+        total_contractor_value = sum(c["potential_value"] for c in contractor_details)
+        total_wealth = base_wealth + total_contractor_value
+
+        return {
+            "coins": coins,  # 现金
+            "bank": bank,  # 银行存款
+            "base_wealth": base_wealth,  # 基础身价（现金+银行）
+            "contractor_count": len(contractors),  # 雇员数量
+            "contractor_details": contractor_details,  # 每个雇员的详细分解
+            "total_contractor_value": total_contractor_value,  # 雇员总价值
+            "total_wealth": total_wealth,  # 总身价
+        }
+
     async def calculate_dynamic_wealth_value(
         self, group_id: str, user_data: dict, user_id: str
     ) -> float:
