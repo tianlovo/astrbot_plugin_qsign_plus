@@ -860,43 +860,43 @@ class ContractSystem(Star):
                 )
 
                 # Add contractor info
-            if user_data.get("contractors"):
-                contractor_names = []
-                for cid in user_data["contractors"]:
-                    cname = await self._get_user_name_from_platform(event, cid)
-                    contractor_names.append(cname)
-                info_text += f"👥 雇员 ({len(user_data['contractors'])}人): {', '.join(contractor_names)}\n"
+                if user_data.get("contractors"):
+                    contractor_names = []
+                    for cid in user_data["contractors"]:
+                        cname = await self._get_user_name_from_platform(event, cid)
+                        contractor_names.append(cname)
+                    info_text += f"👥 雇员 ({len(user_data['contractors'])}人): {', '.join(contractor_names)}\n"
 
-            if user_data.get("contracted_by"):
-                owner_name = await self._get_user_name_from_platform(
-                    event, user_data["contracted_by"]
-                )
-                info_text += f"🔒 雇主: {owner_name}"
-        else:
-            # Simple info output (default)
-            info_text = f"【{user_name} 的资产】\n"
-            info_text += f"💰 现金: {user_data['coins']:.1f} {currency}\n"
-            info_text += f"🏦 银行: {user_data['bank']:.1f} {currency}\n"
-            info_text += f"💎 身价: {total_wealth:.1f} {currency}\n"
+                if user_data.get("contracted_by"):
+                    owner_name = await self._get_user_name_from_platform(
+                        event, user_data["contracted_by"]
+                    )
+                    info_text += f"🔒 雇主: {owner_name}"
+            else:
+                # Simple info output (default)
+                info_text = f"【{user_name} 的资产】\n"
+                info_text += f"💰 现金: {user_data['coins']:.1f} {currency}\n"
+                info_text += f"🏦 银行: {user_data['bank']:.1f} {currency}\n"
+                info_text += f"💎 身价: {total_wealth:.1f} {currency}\n"
 
-            # Add contractor info
-            if user_data.get("contractors"):
-                contractor_names = []
-                for cid in user_data["contractors"]:
-                    cname = await self._get_user_name_from_platform(event, cid)
-                    contractor_names.append(cname)
-                info_text += f"👥 雇员: {', '.join(contractor_names)}\n"
+                # Add contractor info
+                if user_data.get("contractors"):
+                    contractor_names = []
+                    for cid in user_data["contractors"]:
+                        cname = await self._get_user_name_from_platform(event, cid)
+                        contractor_names.append(cname)
+                    info_text += f"👥 雇员: {', '.join(contractor_names)}\n"
 
-            if user_data.get("contracted_by"):
-                owner_name = await self._get_user_name_from_platform(
-                    event, user_data["contracted_by"]
-                )
-                info_text += f"🔒 雇主: {owner_name}\n"
+                if user_data.get("contracted_by"):
+                    owner_name = await self._get_user_name_from_platform(
+                        event, user_data["contracted_by"]
+                    )
+                    info_text += f"🔒 雇主: {owner_name}\n"
 
-            info_text += f"📈 明日预计: {income_info['total']:.1f} {currency}"
+                info_text += f"📈 明日预计: {income_info['total']:.1f} {currency}"
 
-        await send_text_reply(event, info_text)
-        return
+            await send_text_reply(event, info_text)
+            return
 
         # Check if there's already a query in progress for this user
         if group_id in self._query_states and user_id in self._query_states[group_id]:
