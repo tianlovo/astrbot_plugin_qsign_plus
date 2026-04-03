@@ -30,7 +30,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.12.8",
+    "2.12.9",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -271,7 +271,7 @@ class ContractSystem(Star):
 
         # 检查雇佣数量限制
         max_contractors = await self.wealth_system.get_max_contractor_limit(
-            group_id, employer_data, employer_id
+            group_id, employer_data, user_id
         )
         current_contractors = len(employer_data["contractors"])
         if max_contractors > 0 and current_contractors >= max_contractors:

@@ -1,5 +1,18 @@
 # Changelog
 
+## v2.12.9 (2026-04-03)
+
+### 修复
+- **修复 purchase 方法中的变量名错误**: 修复 employer_id 未定义错误
+  - 将 `employer_id` 改为 `user_id`
+
+## v2.12.8 (2026-04-03)
+
+### 修复
+- **修复 get_total_contractor_rate 调用错误**: 修复 get_wealth_level 调用
+  - 将 `self.get_wealth_level(contractor_data)` 改为 `await self.get_wealth_level(group_id, contractor_data, contractor_id)`
+  - 传入正确的 group_id 和 contractor_id 参数
+
 ## v2.12.7 (2026-04-03)
 
 ### 修复
