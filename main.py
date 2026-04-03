@@ -724,12 +724,11 @@ class ContractSystem(Star):
         message_text = message_text.replace(" ", "").replace("\u3000", "")
         import re
 
-        # 匹配"购买"后可选的@用户，然后是数字
-        # 排除@后面的QQ号，只匹配显式输入的数量
-        # 先移除所有[@数字]格式的@提及
-        text_without_at = re.sub(r"\[@\d+\]", "", message_text)
-        # 再匹配购买后的数字
-        amount_match = re.search(r"购买[^\d]*([\d.]+)", text_without_at)
+        # 严格匹配："购买" + 可选的@提及 + 数字
+        # @提及可能是 [@QQ号] 或 @QQ号 格式
+        # 数字必须是独立的部分，不能是QQ号的一部分
+        # 模式：购买[@数字]数字 或 购买@数字数字 或 购买数字
+        amount_match = re.search(r"购买(?:\[?@\d+\]?)?([\d.]+)$", message_text)
         if not amount_match:
             await send_text_reply(event, "请指定购买数量，例如：购买 @群主 10.5")
             return
@@ -811,12 +810,11 @@ class ContractSystem(Star):
         message_text = message_text.replace(" ", "").replace("\u3000", "")
         import re
 
-        # 匹配"出售"后可选的@用户，然后是数字
-        # 排除@后面的QQ号，只匹配显式输入的数量
-        # 先移除所有[@数字]格式的@提及
-        text_without_at = re.sub(r"\[@\d+\]", "", message_text)
-        # 再匹配出售后的数字
-        amount_match = re.search(r"出售[^\d]*([\d.]+)", text_without_at)
+        # 严格匹配："出售" + 可选的@提及 + 数字
+        # @提及可能是 [@QQ号] 或 @QQ号 格式
+        # 数字必须是独立的部分，不能是QQ号的一部分
+        # 模式：出售[@数字]数字 或 出售@数字数字 或 出售数字
+        amount_match = re.search(r"出售(?:\[?@\d+\]?)?([\d.]+)$", message_text)
         if not amount_match:
             await send_text_reply(event, "请指定出售数量，例如：出售 @群主 10.5")
             return
