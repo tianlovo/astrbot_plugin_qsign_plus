@@ -1297,7 +1297,7 @@ class QsignDatabase:
             days: 查询天数，默认7天
 
         Returns:
-            汇率历史记录列表
+            汇率历史记录列表，按时间升序排列（旧的在前面）
         """
         if not self._conn:
             raise RuntimeError("数据库未初始化")
@@ -1308,7 +1308,7 @@ class QsignDatabase:
                 """
                 SELECT rate, recorded_at FROM exchange_rate_history
                 WHERE group_id = ? AND recorded_at >= ?
-                ORDER BY recorded_at DESC
+                ORDER BY recorded_at ASC
                 """,
                 (str(group_id), cutoff_time),
             ) as cursor:

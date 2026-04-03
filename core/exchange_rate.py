@@ -318,7 +318,7 @@ class ExchangeRateHistory:
             days: 查询天数，默认 7 天
 
         Returns:
-            汇率记录列表，按时间升序排列
+            汇率记录列表，按时间升序排列（旧的在前面，新的在后面）
         """
         records = await self._db.get_exchange_rate_history(group_id, days)
         return [
