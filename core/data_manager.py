@@ -455,6 +455,35 @@ class DataManager:
         """
         return await self.db.get_latest_purchase_price(group_id, contractor_id)
 
+    async def get_owner_currency_balance(self, group_id: str, user_id: str) -> float:
+        """获取用户群主货币余额
+
+        Args:
+            group_id: 群ID
+            user_id: 用户ID
+
+        Returns:
+            群主货币余额
+        """
+        return await self.db.get_owner_currency_balance(group_id, user_id)
+
+    async def add_owner_currency_balance(
+        self, group_id: str, user_id: str, amount: float
+    ) -> bool:
+        """增加用户群主货币余额
+
+        Args:
+            group_id: 群ID
+            user_id: 用户ID
+            amount: 增加数量（可为负数）
+
+        Returns:
+            是否成功
+        """
+        return await self.db.update_owner_currency_balance(
+            group_id, user_id, amount, is_increment=True
+        )
+
     async def close(self):
         """关闭数据库连接"""
         await self.db.close()
