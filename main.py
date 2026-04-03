@@ -30,7 +30,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.12.9",
+    "2.12.10",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -712,7 +712,7 @@ class ContractSystem(Star):
             consecutive_bonus,
             interest,
         ) = await self.wealth_system.calculate_sign_income(
-            user_data, group_id, is_penalized, admin_ids
+            user_data, group_id, user_id, is_penalized, admin_ids
         )
 
         user_data["coins"] += earned

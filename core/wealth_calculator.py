@@ -461,6 +461,7 @@ class WealthCalculator:
         self,
         user_data: dict,
         group_id: str,
+        user_id: str,
         is_penalized: bool = False,
         admin_ids: list = None,
     ) -> tuple:
@@ -469,13 +470,14 @@ class WealthCalculator:
         Args:
             user_data: 用户数据
             group_id: 群ID
+            user_id: 用户ID
             is_penalized: 是否受雇（收益减少）
             admin_ids: 群管理员ID列表
 
         Returns:
             (最终收益, 原始收益, 基础收益, 雇员加成, 连续签到加成, 银行利息)
         """
-        _, user_base_rate = self.get_wealth_level(user_data)
+        _, user_base_rate = await self.get_wealth_level(group_id, user_data, user_id)
         contractor_dynamic_rates = await self.get_total_contractor_rate(
             group_id, user_data.get("contractors", []), admin_ids
         )

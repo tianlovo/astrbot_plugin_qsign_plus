@@ -155,6 +155,7 @@ class WealthSystem:
         self,
         user_data: dict,
         group_id: str,
+        user_id: str,
         is_penalized: bool = False,
         admin_ids: list = None,
     ) -> tuple:
@@ -163,6 +164,7 @@ class WealthSystem:
         Args:
             user_data: 用户数据
             group_id: 群ID
+            user_id: 用户ID
             is_penalized: 是否受雇（收益减少）
             admin_ids: 群管理员ID列表
 
@@ -170,7 +172,7 @@ class WealthSystem:
             (最终收益, 原始收益, 基础收益, 雇员加成, 连续签到加成, 银行利息)
         """
         return await self.calculator.calculate_sign_income(
-            user_data, group_id, is_penalized, admin_ids
+            user_data, group_id, user_id, is_penalized, admin_ids
         )
 
     async def calculate_tomorrow_income(
