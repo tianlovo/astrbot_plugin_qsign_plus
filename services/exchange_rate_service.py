@@ -6,6 +6,7 @@
 """
 
 import asyncio
+import random
 from typing import TYPE_CHECKING
 
 from astrbot.api import logger
@@ -141,6 +142,23 @@ class ExchangeRateService:
         enabled_groups = basic_config.get("enabled_groups", [])
 
         if not enabled_groups:
+            return
+
+        # 获取更新概率配置（默认100%）
+        update_probability = stock_config.get("update_probability", 1.0)
+
+        # 生成随机数进行概率判定
+        random_value = random.random()
+        should_update = random_value <= update_probability
+
+        logger.info(
+            f"[汇率服务] 概率判定: 随机值={random_value:.4f}, "
+            f"配置概率={update_probability:.2%}, "
+            f"结果={'执行更新' if should_update else '跳过更新'}"
+        )
+
+        if not should_update:
+            logger.info("[汇率服务] 本次更新被概率判定跳过")
             return
 
         for group_id in enabled_groups:

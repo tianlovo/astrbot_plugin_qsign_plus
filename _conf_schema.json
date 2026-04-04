@@ -201,6 +201,12 @@
         "default": 60,
         "hint": "汇率更新间隔（分钟）"
       },
+      "update_probability": {
+        "type": "float",
+        "description": "更新概率",
+        "default": 1.0,
+        "hint": "每次到达更新间隔时，实际执行汇率更新的概率（0-1）。例如0.5代表50%概率更新，使汇率波动更自然。"
+      },
       "history_days": {
         "type": "int",
         "description": "历史天数",
