@@ -4,7 +4,7 @@
 提供股市交易时段的配置解析、时段检查、下一时段计算等功能。
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from typing import TYPE_CHECKING
 
 import pytz
@@ -207,7 +207,7 @@ class TradingHoursService:
         return "暂无 upcoming 交易时段"
 
     @staticmethod
-    def _parse_time(time_str: str) -> "datetime.time":
+    def _parse_time(time_str: str) -> "time":
         """解析时间字符串
 
         Args:
@@ -221,6 +221,6 @@ class TradingHoursService:
         """
         try:
             hour, minute = map(int, time_str.split(":"))
-            return datetime.time(hour=hour, minute=minute)
+            return time(hour=hour, minute=minute)
         except (ValueError, AttributeError) as e:
             raise ValueError(f"无效的时间格式: {time_str}") from e
