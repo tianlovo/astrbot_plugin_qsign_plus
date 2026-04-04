@@ -974,7 +974,19 @@ class ContractSystem(Star):
 
         user_id = str(event.get_sender_id())
 
-        # 检查使用次数限制
+        # 检查是否在交易时段
+        is_trading = self.trading_hours_service.is_trading_time()
+
+        # 非交易时段时免费查询，不消耗次数
+        if not is_trading:
+            next_opening = self.trading_hours_service.format_next_opening()
+            await send_text_reply(
+                event,
+                f"当前非交易时段，汇率查询免费。\n{next_opening}",
+            )
+            return
+
+        # 检查使用次数限制（仅在交易时段内检查）
         user_data = await self.data_manager.get_user_data(group_id, user_id)
         wealth_level, _ = await self.wealth_system.get_wealth_info(
             group_id, user_data, user_id
@@ -1061,11 +1073,6 @@ class ContractSystem(Star):
             info_text += "暂无每日平均汇率数据\n"
 
         info_text += f"\n{self.owner_currency_manager.DISCLAIMER}"
-
-        # 检查交易时段并添加提示
-        if not self.trading_hours_service.is_trading_time():
-            next_opening = self.trading_hours_service.format_next_opening()
-            info_text += f"\n\n[非交易时段，{next_opening}]"
 
         # 增加使用次数并获取剩余次数
         await self.stock_limit_service.increment_limit(
