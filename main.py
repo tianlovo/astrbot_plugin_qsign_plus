@@ -1029,6 +1029,77 @@ class ContractSystem(Star):
             f"✅ 操作成功！\n已为 {target_name} 增加 {amount:.1f} {currency}\n当前现金：{target_data['coins']:.1f} {currency}",
         )
 
+    @filter.regex(r"^take\s*")
+    async def take_money(self, event: AstrMessageEvent):
+        """超级管理员从指定用户扣除现金"""
+        # 检查是否为超级管理员
+        user_id = str(event.get_sender_id())
+        if not self._is_super_admin(user_id):
+            # 非超级管理员，静默处理
+            return
+
+        group_id = str(event.message_obj.group_id)
+
+        # 获取目标用户（支持at）
+        target_id = get_target_at_user(event) or get_first_at_user(event)
+        if not target_id:
+            await send_text_reply(
+                event, "请使用@指定要扣除现金的用户。\n用法：take @用户 金额"
+            )
+            return
+
+        # 解析金额
+        message_text = get_plain_text_from_message(event)
+        message_text = message_text.replace(" ", "").replace("\u3000", "")
+        import re
+
+        amount_match = re.search(r"take.*?[\d]+(?:\.[\d]{1,1})?$", message_text)
+        if not amount_match:
+            await send_text_reply(event, "请指定金额。\n用法：take @用户 金额")
+            return
+
+        try:
+            amount_str = re.search(r"([\d]+(?:\.[\d]{1,1})?)$", message_text)
+            if not amount_str:
+                await send_text_reply(event, "无效的金额。\n用法：take @用户 金额")
+                return
+            amount = float(amount_str.group(1))
+            if amount <= 0:
+                await send_text_reply(event, "金额必须大于0。")
+                return
+        except ValueError:
+            await send_text_reply(event, "无效的金额。\n用法：take @用户 金额")
+            return
+
+        # 限制金额精度为一位小数
+        from .utils.helpers import truncate_decimal
+
+        amount = truncate_decimal(amount, precision=1)
+
+        # 获取目标用户数据
+        target_data = await self.data_manager.get_user_data(group_id, target_id)
+
+        # 检查用户现金是否足够
+        if target_data["coins"] < amount:
+            await send_text_reply(
+                event,
+                f"❌ 操作失败！\n用户现金不足，当前现金：{target_data['coins']:.1f} {self._get_currency_name()}",
+            )
+            return
+
+        # 扣除现金
+        target_data["coins"] -= amount
+        await self.data_manager.save_user_data(group_id, target_id, target_data)
+
+        # 获取目标用户名称
+        target_name = await self._get_user_name_from_platform(event, target_id)
+        currency = self._get_currency_name()
+
+        await send_text_reply(
+            event,
+            f"✅ 操作成功！\n已从 {target_name} 扣除 {amount:.1f} {currency}\n当前现金：{target_data['coins']:.1f} {currency}",
+        )
+
     @filter.regex(r"^签到$")
     async def sign_in(self, event: AstrMessageEvent):
         if not is_at_bot(event):
