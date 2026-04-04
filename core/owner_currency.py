@@ -78,7 +78,7 @@ class OwnerCurrencyManager:
         if cost_int > coins_int:
             return (
                 False,
-                f"现金不足，需要 {cost:.1f}，当前现金：{user_data['coins']:.1f}\n{self.DISCLAIMER}",
+                f"现金不足，当前现金：{user_data['coins']:.1f}\n{self.DISCLAIMER}",
                 0.0,
             )
 
