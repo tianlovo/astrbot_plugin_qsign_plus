@@ -698,16 +698,10 @@ class ContractSystem(Star):
         # 获取目标用户角色（用于计算管理员价格加成）
         target_role = await self._get_user_role(event, target_id)
 
-        # 使用身价计算器计算出售价格
-        base_sell_price = await self.wealth_calculator.calculate_dynamic_wealth_value(
-            group_id, target_data, target_id
+        # 使用价格查询逻辑计算雇员身价（与价格指令一致）
+        base_sell_price = await self.wealth_calculator.calculate_purchase_price(
+            group_id, target_data, target_id, target_role
         )
-
-        # 管理员和群主享受价格加成（与购买时一致）
-        if target_role in ["owner", "admin"]:
-            admin_config = self.config.get("admin", {})
-            admin_bonus = admin_config.get("admin_price_bonus", 0.5)
-            base_sell_price *= 1 + admin_bonus
 
         sell_price = base_sell_price * sell_rate
 
