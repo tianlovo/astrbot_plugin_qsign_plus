@@ -736,11 +736,6 @@ class ContractSystem(Star):
         if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
             return
 
-        # 检查维护模式
-        if self._is_maintenance_mode():
-            await send_text_reply(event, "系统维护中，暂时无法使用此功能，请稍后再试。")
-            return
-
         # 获取目标用户（群主）
         target_id = get_target_at_user(event) or get_first_at_user(event)
         if not target_id:
@@ -750,9 +745,14 @@ class ContractSystem(Star):
         user_id = str(event.get_sender_id())
 
         # 检查目标是否是群主
-        # 如果不是群主，不发送提示，让 purchase 方法处理
+        # 如果不是群主，不发送提示，直接返回（让 purchase 方法处理）
         target_role = await self._get_user_role(event, target_id)
         if target_role != "owner":
+            return
+
+        # 检查维护模式（只在确认是群主币购买后才检查）
+        if self._is_maintenance_mode():
+            await send_text_reply(event, "系统维护中，暂时无法使用此功能，请稍后再试。")
             return
 
         # 解析数量（支持忽略空格，限制三位小数）
@@ -821,11 +821,6 @@ class ContractSystem(Star):
         if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
             return
 
-        # 检查维护模式
-        if self._is_maintenance_mode():
-            await send_text_reply(event, "系统维护中，暂时无法使用此功能，请稍后再试。")
-            return
-
         # 获取目标用户（群主）
         target_id = get_target_at_user(event) or get_first_at_user(event)
         if not target_id:
@@ -835,9 +830,14 @@ class ContractSystem(Star):
         user_id = str(event.get_sender_id())
 
         # 检查目标是否是群主
-        # 如果不是群主，不发送提示，直接返回
+        # 如果不是群主，不发送提示，直接返回（让 sell 方法处理）
         target_role = await self._get_user_role(event, target_id)
         if target_role != "owner":
+            return
+
+        # 检查维护模式（只在确认是群主币出售后才检查）
+        if self._is_maintenance_mode():
+            await send_text_reply(event, "系统维护中，暂时无法使用此功能，请稍后再试。")
             return
 
         # 解析数量（支持忽略空格，限制三位小数）
