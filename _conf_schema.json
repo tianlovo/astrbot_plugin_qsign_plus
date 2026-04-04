@@ -114,6 +114,12 @@
         "description": "管理员价格加成比例",
         "default": 0.5,
         "hint": "例如，0.5代表管理员身价加成50%，管理员可被购买但价格更高。"
+      },
+      "super_admins": {
+        "type": "list",
+        "description": "超级管理员QQ号列表",
+        "default": [],
+        "hint": "超级管理员可以使用特殊指令（如give指令），不受群组限制。填写QQ号字符串。"
       }
     }
   },

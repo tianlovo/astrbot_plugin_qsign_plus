@@ -130,6 +130,19 @@ class ContractSystem(Star):
         basic_config = self.config.get("basic", {})
         return basic_config.get("maintenance_mode", False)
 
+    def _is_super_admin(self, user_id: str) -> bool:
+        """检查用户是否为超级管理员
+
+        Args:
+            user_id: 用户ID
+
+        Returns:
+            是否为超级管理员
+        """
+        admin_config = self.config.get("admin", {})
+        super_admins = admin_config.get("super_admins", [])
+        return str(user_id) in [str(admin) for admin in super_admins]
+
     async def _get_user_role(self, event: AstrMessageEvent, user_id: str) -> str:
         """获取用户在群中的角色
 
@@ -951,6 +964,70 @@ class ContractSystem(Star):
         info_text += f"\n{self.owner_currency_manager.DISCLAIMER}"
 
         await send_text_reply(event, info_text)
+
+    @filter.regex(r"^give\s*")
+    async def give_money(self, event: AstrMessageEvent):
+        """超级管理员给指定用户增加现金"""
+        # 检查是否为超级管理员
+        user_id = str(event.get_sender_id())
+        if not self._is_super_admin(user_id):
+            # 非超级管理员，静默处理
+            return
+
+        group_id = str(event.message_obj.group_id)
+
+        # 获取目标用户（支持at）
+        target_id = get_target_at_user(event) or get_first_at_user(event)
+        if not target_id:
+            await send_text_reply(
+                event, "请使用@指定要增加现金的用户。\n用法：give @用户 金额"
+            )
+            return
+
+        # 解析金额
+        message_text = get_plain_text_from_message(event)
+        message_text = message_text.replace(" ", "").replace("\u3000", "")
+        import re
+
+        amount_match = re.search(r"give.*?[\d]+(?:\.[\d]{1,1})?$", message_text)
+        if not amount_match:
+            await send_text_reply(event, "请指定金额。\n用法：give @用户 金额")
+            return
+
+        try:
+            # 提取金额（去掉@用户的QQ号）
+            # 从消息中移除所有数字（包括QQ号），然后尝试解析金额
+            # 更好的方法是直接匹配最后的数字
+            amount_str = re.search(r"([\d]+(?:\.[\d]{1,1})?)$", message_text)
+            if not amount_str:
+                await send_text_reply(event, "无效的金额。\n用法：give @用户 金额")
+                return
+            amount = float(amount_str.group(1))
+            if amount <= 0:
+                await send_text_reply(event, "金额必须大于0。")
+                return
+        except ValueError:
+            await send_text_reply(event, "无效的金额。\n用法：give @用户 金额")
+            return
+
+        # 限制金额精度为一位小数
+        from .utils.helpers import truncate_decimal
+
+        amount = truncate_decimal(amount, precision=1)
+
+        # 获取目标用户数据并增加现金
+        target_data = await self.data_manager.get_user_data(group_id, target_id)
+        target_data["coins"] += amount
+        await self.data_manager.save_user_data(group_id, target_id, target_data)
+
+        # 获取目标用户名称
+        target_name = await self._get_user_name_from_platform(event, target_id)
+        currency = self._get_currency_name()
+
+        await send_text_reply(
+            event,
+            f"✅ 操作成功！\n已为 {target_name} 增加 {amount:.1f} {currency}\n当前现金：{target_data['coins']:.1f} {currency}",
+        )
 
     @filter.regex(r"^签到$")
     async def sign_in(self, event: AstrMessageEvent):
