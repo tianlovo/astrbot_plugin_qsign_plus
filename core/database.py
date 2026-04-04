@@ -210,6 +210,21 @@ class QsignDatabase:
                 )
             """)
 
+            # 创建股市限制表
+            await self._conn.execute("""
+                CREATE TABLE IF NOT EXISTS stock_market_limits (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    group_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    exchange_query_count INTEGER DEFAULT 0,
+                    buy_count INTEGER DEFAULT 0,
+                    sell_count INTEGER DEFAULT 0,
+                    limit_date TEXT NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    UNIQUE(group_id, user_id, limit_date)
+                )
+            """)
+
             # 创建索引
             await self._conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_user_wealth_group
@@ -246,6 +261,10 @@ class QsignDatabase:
             await self._conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_exchange_rate_group_time
                 ON exchange_rate_history(group_id, recorded_at)
+            """)
+            await self._conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_stock_limits_group_user_date
+                ON stock_market_limits(group_id, user_id, limit_date)
             """)
 
             await self._conn.commit()
@@ -1453,3 +1472,92 @@ class QsignDatabase:
         except Exception as e:
             logger.error(f"[{self.plugin_name}] 获取每日平均汇率失败: {e}")
             return []
+
+    async def get_stock_limit(
+        self, group_id: str, user_id: str, limit_date: str
+    ) -> dict[str, Any]:
+        """获取用户股市限制数据
+
+        Args:
+            group_id: 群ID
+            user_id: 用户ID
+            limit_date: 限制日期 (YYYY-MM-DD)
+
+        Returns:
+            限制数据字典，如果不存在则返回默认值
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            async with self._conn.execute(
+                """
+                SELECT * FROM stock_market_limits
+                WHERE group_id = ? AND user_id = ? AND limit_date = ?
+                """,
+                (str(group_id), str(user_id), limit_date),
+            ) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    return {
+                        "exchange_query_count": row["exchange_query_count"],
+                        "buy_count": row["buy_count"],
+                        "sell_count": row["sell_count"],
+                        "limit_date": row["limit_date"],
+                        "updated_at": row["updated_at"],
+                    }
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 获取股市限制数据失败: {e}")
+
+        # 返回默认值
+        return {
+            "exchange_query_count": 0,
+            "buy_count": 0,
+            "sell_count": 0,
+            "limit_date": limit_date,
+            "updated_at": 0,
+        }
+
+    async def increment_stock_limit(
+        self, group_id: str, user_id: str, limit_type: str, limit_date: str
+    ) -> bool:
+        """增加股市限制计数
+
+        Args:
+            group_id: 群ID
+            user_id: 用户ID
+            limit_type: 限制类型 (exchange_query/buy/sell)
+            limit_date: 限制日期 (YYYY-MM-DD)
+
+        Returns:
+            是否成功
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        # 验证 limit_type
+        valid_types = ["exchange_query", "buy", "sell"]
+        if limit_type not in valid_types:
+            logger.error(f"[{self.plugin_name}] 无效的限制类型: {limit_type}")
+            return False
+
+        try:
+            now = int(time.time())
+            column_name = f"{limit_type}_count"
+
+            await self._conn.execute(
+                f"""
+                INSERT INTO stock_market_limits
+                (group_id, user_id, {column_name}, limit_date, updated_at)
+                VALUES (?, ?, 1, ?, ?)
+                ON CONFLICT(group_id, user_id, limit_date) DO UPDATE SET
+                {column_name} = {column_name} + 1,
+                updated_at = ?
+                """,
+                (str(group_id), str(user_id), limit_date, now, now),
+            )
+            await self._conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 增加股市限制计数失败: {e}")
+            return False

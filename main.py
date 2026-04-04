@@ -12,6 +12,7 @@ from astrbot.api.star import Context, Star, register
 from .core.data_manager import DataManager
 from .core.exchange_rate import ExchangeRateCalculator, ExchangeRateHistory
 from .core.owner_currency import OwnerCurrencyManager
+from .core.stock_limit_service import StockLimitService
 from .core.wealth_calculator import WealthCalculator
 from .core.wealth_system import WealthSystem
 from .services.card_renderer import CardRenderer
@@ -34,7 +35,7 @@ SHANGHAI_TZ = pytz.timezone("Asia/Shanghai")
     "astrbot_plugin_qsign_plus",
     "tianluoqaq",
     "二次元签到插件",
-    "2.15.2",
+    "2.15.3",
     "https://github.com/tianlovo/astrbot_plugin_qsign_plus",
 )
 class ContractSystem(Star):
@@ -87,6 +88,9 @@ class ContractSystem(Star):
         self.owner_currency_manager = OwnerCurrencyManager(
             self.data_manager, self.exchange_calculator
         )
+
+        # 初始化股市限制服务
+        self.stock_limit_service = StockLimitService(self.data_manager, config)
 
         # 初始化并启动汇率更新后台服务
         self.exchange_rate_service = ExchangeRateService(
@@ -749,6 +753,21 @@ class ContractSystem(Star):
             await send_text_reply(event, "系统维护中，暂时无法使用此功能，请稍后再试。")
             return
 
+        # 检查使用次数限制
+        user_data = await self.data_manager.get_user_data(group_id, user_id)
+        wealth_level, _ = await self.wealth_system.get_wealth_info(
+            group_id, user_data, user_id
+        )
+        can_use, used_count, max_count = await self.stock_limit_service.check_limit(
+            group_id, user_id, "buy", wealth_level
+        )
+        if not can_use:
+            await send_text_reply(
+                event,
+                f"今日购买次数已用完（上限{max_count}次），请明日0点后再试。",
+            )
+            return
+
         # 解析数量（支持忽略空格，限制三位小数）
         # 从消息中提取纯文本（不包括At组件），避免将QQ号误解析为数量
         message_text = get_plain_text_from_message(event)
@@ -795,11 +814,19 @@ class ContractSystem(Star):
             currency_unit = self.owner_currency_manager.format_currency_name(owner_name)
             cost = self.exchange_calculator.calculate_buy_cost(amount, current_rate)
 
+            # 增加使用次数并获取剩余次数
+            await self.stock_limit_service.increment_limit(group_id, user_id, "buy")
+            remaining = await self.stock_limit_service.get_remaining_limits(
+                group_id, user_id, wealth_level
+            )
+            limit_msg = self.stock_limit_service.format_limit_message(remaining)
+
             await send_text_reply(
                 event,
                 f"购买成功！您花费 {cost:.1f} {currency_name} 购买了 {actual_amount:.3f} {currency_unit}\n"
                 f"当前汇率: 1 {currency_unit} = {current_rate:.4f} {currency_name}\n"
-                f"{self.owner_currency_manager.DISCLAIMER}",
+                f"{self.owner_currency_manager.DISCLAIMER}\n\n"
+                f"{limit_msg}",
             )
         else:
             await send_text_reply(event, message)
@@ -832,6 +859,21 @@ class ContractSystem(Star):
         # 检查维护模式（只在确认是群主币出售后才检查）
         if self._is_maintenance_mode():
             await send_text_reply(event, "系统维护中，暂时无法使用此功能，请稍后再试。")
+            return
+
+        # 检查使用次数限制
+        user_data = await self.data_manager.get_user_data(group_id, user_id)
+        wealth_level, _ = await self.wealth_system.get_wealth_info(
+            group_id, user_data, user_id
+        )
+        can_use, used_count, max_count = await self.stock_limit_service.check_limit(
+            group_id, user_id, "sell", wealth_level
+        )
+        if not can_use:
+            await send_text_reply(
+                event,
+                f"今日出售次数已用完（上限{max_count}次），请明日0点后再试。",
+            )
             return
 
         # 解析数量（支持忽略空格，限制三位小数）
@@ -873,11 +915,19 @@ class ContractSystem(Star):
             currency_name = self._get_currency_name()
             currency_unit = self.owner_currency_manager.format_currency_name(owner_name)
 
+            # 增加使用次数并获取剩余次数
+            await self.stock_limit_service.increment_limit(group_id, user_id, "sell")
+            remaining = await self.stock_limit_service.get_remaining_limits(
+                group_id, user_id, wealth_level
+            )
+            limit_msg = self.stock_limit_service.format_limit_message(remaining)
+
             await send_text_reply(
                 event,
                 f"出售成功！您出售了 {amount:.3f} {currency_unit}，获得 {revenue:.1f} {currency_name}\n"
                 f"当前汇率: 1 {currency_unit} = {current_rate:.4f} {currency_name}\n"
-                f"{self.owner_currency_manager.DISCLAIMER}",
+                f"{self.owner_currency_manager.DISCLAIMER}\n\n"
+                f"{limit_msg}",
             )
         else:
             await send_text_reply(event, message)
@@ -891,6 +941,23 @@ class ContractSystem(Star):
         group_id = str(event.message_obj.group_id)
         basic_config = self.config.get("basic", {})
         if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
+            return
+
+        user_id = str(event.get_sender_id())
+
+        # 检查使用次数限制
+        user_data = await self.data_manager.get_user_data(group_id, user_id)
+        wealth_level, _ = await self.wealth_system.get_wealth_info(
+            group_id, user_data, user_id
+        )
+        can_use, used_count, max_count = await self.stock_limit_service.check_limit(
+            group_id, user_id, "exchange_query", wealth_level
+        )
+        if not can_use:
+            await send_text_reply(
+                event,
+                f"今日汇率查询次数已用完（上限{max_count}次），请明日0点后再试。",
+            )
             return
 
         # 获取群主信息
@@ -948,9 +1015,9 @@ class ContractSystem(Star):
             for record in recent_5:
                 from datetime import datetime
 
-                date_str = datetime.fromtimestamp(record.recorded_at).strftime(
-                    "%m-%d %H:%M"
-                )
+                # 使用上海时区转换时间戳
+                dt = datetime.fromtimestamp(record.recorded_at, SHANGHAI_TZ)
+                date_str = dt.strftime("%m-%d %H:%M")
                 info_text += f"  {date_str}: {record.rate:.4f}\n"
             info_text += "\n"
         else:
@@ -965,6 +1032,16 @@ class ContractSystem(Star):
             info_text += "暂无每日平均汇率数据\n"
 
         info_text += f"\n{self.owner_currency_manager.DISCLAIMER}"
+
+        # 增加使用次数并获取剩余次数
+        await self.stock_limit_service.increment_limit(
+            group_id, user_id, "exchange_query"
+        )
+        remaining = await self.stock_limit_service.get_remaining_limits(
+            group_id, user_id, wealth_level
+        )
+        limit_msg = self.stock_limit_service.format_limit_message(remaining)
+        info_text += f"\n\n{limit_msg}"
 
         await send_text_reply(event, info_text)
 

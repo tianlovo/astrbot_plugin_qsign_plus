@@ -266,6 +266,37 @@
         "description": "最大趋势强度",
         "default": 0.05,
         "hint": "每天趋势影响的最大幅度，例如0.05代表每天最多5%的趋势影响"
+      },
+      "rate_limit": {
+        "description": "使用次数限制",
+        "type": "object",
+        "hint": "股市命令每日使用次数限制配置",
+        "items": {
+          "enable_rate_limit": {
+            "type": "bool",
+            "description": "启用次数限制",
+            "default": true,
+            "hint": "开启后，汇率查询、购买、出售命令将有每日次数限制"
+          },
+          "base_exchange_query": {
+            "type": "int",
+            "description": "汇率查询基础次数",
+            "default": 3,
+            "hint": "平民等级每日可查询汇率的次数"
+          },
+          "base_buy": {
+            "type": "int",
+            "description": "购买基础次数",
+            "default": 2,
+            "hint": "平民等级每日可购买群主币的次数"
+          },
+          "base_sell": {
+            "type": "int",
+            "description": "出售基础次数",
+            "default": 2,
+            "hint": "平民等级每日可出售群主币的次数"
+          }
+        }
       }
     }
   },
