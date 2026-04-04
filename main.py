@@ -13,6 +13,7 @@ from .core.data_manager import DataManager
 from .core.exchange_rate import ExchangeRateCalculator, ExchangeRateHistory
 from .core.owner_currency import OwnerCurrencyManager
 from .core.stock_limit_service import StockLimitService
+from .core.trading_hours import TradingHoursService
 from .core.wealth_calculator import WealthCalculator
 from .core.wealth_system import WealthSystem
 from .services.card_renderer import CardRenderer
@@ -93,12 +94,16 @@ class ContractSystem(Star):
         # 初始化股市限制服务
         self.stock_limit_service = StockLimitService(self.data_manager, config)
 
+        # 初始化交易时段服务
+        self.trading_hours_service = TradingHoursService(config)
+
         # 初始化并启动汇率更新后台服务
         self.exchange_rate_service = ExchangeRateService(
             data_manager=self.data_manager,
             exchange_calculator=self.exchange_calculator,
             exchange_history=self.exchange_history,
             config=config,
+            trading_hours_service=self.trading_hours_service,
         )
         asyncio.create_task(self.exchange_rate_service.start())
 
@@ -761,6 +766,14 @@ class ContractSystem(Star):
             await send_text_reply(event, "系统维护中，暂时无法使用此功能，请稍后再试。")
             return
 
+        # 检查交易时段
+        if not self.trading_hours_service.is_trading_time():
+            next_opening = self.trading_hours_service.format_next_opening()
+            await send_text_reply(
+                event, f"当前非交易时段，无法购买。\n{next_opening}"
+            )
+            return
+
         # 检查使用次数限制
         user_data = await self.data_manager.get_user_data(group_id, user_id)
         wealth_level, _ = await self.wealth_system.get_wealth_info(
@@ -867,6 +880,14 @@ class ContractSystem(Star):
         # 检查维护模式（只在确认是群主币出售后才检查）
         if self._is_maintenance_mode():
             await send_text_reply(event, "系统维护中，暂时无法使用此功能，请稍后再试。")
+            return
+
+        # 检查交易时段
+        if not self.trading_hours_service.is_trading_time():
+            next_opening = self.trading_hours_service.format_next_opening()
+            await send_text_reply(
+                event, f"当前非交易时段，无法出售。\n{next_opening}"
+            )
             return
 
         # 检查使用次数限制
@@ -1040,6 +1061,11 @@ class ContractSystem(Star):
             info_text += "暂无每日平均汇率数据\n"
 
         info_text += f"\n{self.owner_currency_manager.DISCLAIMER}"
+
+        # 检查交易时段并添加提示
+        if not self.trading_hours_service.is_trading_time():
+            next_opening = self.trading_hours_service.format_next_opening()
+            info_text += f"\n\n[非交易时段，{next_opening}]"
 
         # 增加使用次数并获取剩余次数
         await self.stock_limit_service.increment_limit(

@@ -315,6 +315,66 @@
         "description": "汇率历史保留天数",
         "default": 30,
         "hint": "汇率历史记录保留的天数，超过此天数的记录将被自动清理"
+      },
+      "trading_hours": {
+        "type": "template_list",
+        "description": "交易时段配置",
+        "hint": "配置多个交易时段，支持上午盘、下午盘、夜盘等。默认使用中国股市交易时间（周一至周五 9:30-11:30, 13:00-15:00）。留空则全天可交易。",
+        "templates": {
+          "trading_session": {
+            "name": "交易时段",
+            "hint": "定义一个交易时段的时间和生效星期",
+            "items": {
+              "name": {
+                "type": "string",
+                "description": "时段名称",
+                "default": "上午盘",
+                "hint": "给这个交易时段起个名字，如上午盘、下午盘、夜盘等"
+              },
+              "start_time": {
+                "type": "string",
+                "description": "开始时间",
+                "default": "09:30",
+                "hint": "交易时段开始时间，格式 HH:MM，如 09:30"
+              },
+              "end_time": {
+                "type": "string",
+                "description": "结束时间",
+                "default": "11:30",
+                "hint": "交易时段结束时间，格式 HH:MM，如 11:30"
+              },
+              "weekdays": {
+                "type": "list",
+                "description": "生效星期",
+                "hint": "选择该时段在星期几生效，可多选",
+                "options": ["周一", "周二", "周三", "周四", "周五", "周六", "周日"],
+                "default": ["周一", "周二", "周三", "周四", "周五"]
+              },
+              "enabled": {
+                "type": "bool",
+                "description": "是否启用",
+                "default": true,
+                "hint": "关闭后该时段将不生效"
+              }
+            }
+          }
+        },
+        "default": [
+          {
+            "name": "上午盘",
+            "start_time": "09:30",
+            "end_time": "11:30",
+            "weekdays": ["周一", "周二", "周三", "周四", "周五"],
+            "enabled": true
+          },
+          {
+            "name": "下午盘",
+            "start_time": "13:00",
+            "end_time": "15:00",
+            "weekdays": ["周一", "周二", "周三", "周四", "周五"],
+            "enabled": true
+          }
+        ]
       }
     }
   },

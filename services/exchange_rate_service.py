@@ -14,6 +14,7 @@ from astrbot.api import logger
 if TYPE_CHECKING:
     from ..core.data_manager import DataManager
     from ..core.exchange_rate import ExchangeRateCalculator, ExchangeRateHistory
+    from ..core.trading_hours import TradingHoursService
 
 
 class ExchangeRateService:
@@ -32,6 +33,7 @@ class ExchangeRateService:
         exchange_calculator: "ExchangeRateCalculator",
         exchange_history: "ExchangeRateHistory",
         config: dict,
+        trading_hours_service: "TradingHoursService | None" = None,
     ):
         """初始化汇率更新服务
 
@@ -40,11 +42,13 @@ class ExchangeRateService:
             exchange_calculator: 汇率计算器实例
             exchange_history: 汇率历史管理器实例
             config: 插件配置字典
+            trading_hours_service: 交易时段服务实例
         """
         self._data_manager = data_manager
         self._exchange_calculator = exchange_calculator
         self._exchange_history = exchange_history
         self._config = config
+        self._trading_hours = trading_hours_service
 
         self._task: asyncio.Task | None = None
         self._stop_event = asyncio.Event()
@@ -132,6 +136,11 @@ class ExchangeRateService:
 
     async def _update_exchange_rates(self) -> None:
         """更新所有启用群组的汇率"""
+        # 检查交易时段
+        if self._trading_hours and not self._trading_hours.is_trading_time():
+            logger.info("[汇率服务] 当前非交易时段，跳过汇率更新")
+            return
+
         # 再次检查数据库是否已初始化（防止初始化状态变化）
         if not self._data_manager.is_db_initialized():
             logger.debug("[汇率服务] 数据库尚未初始化，跳过本次汇率更新")
