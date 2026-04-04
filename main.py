@@ -1610,7 +1610,7 @@ class ContractSystem(Star):
                 if not self._query_states[group_id]:
                     del self._query_states[group_id]
 
-    @filter.regex(r"^(存款|存钱)\s*([0-9.]+)$")
+    @filter.regex(r"^(存款|存钱)$|^(存款|存钱)\s+([0-9.]+)$")
     async def deposit(self, event: AstrMessageEvent):
         if not is_at_bot(event):
             return
@@ -1626,26 +1626,36 @@ class ContractSystem(Star):
             return
 
         # Parse amount from message
-        message_str = event.message_str
-        match = __import__("re").match(r"^(存款|存钱)\s*([0-9.]+)$", message_str)
+        message_str = event.message_str.strip()
+        match = __import__("re").match(r"^(存款|存钱)(?:\s+([0-9.]+))?$", message_str)
         if not match:
-            await send_text_reply(event, "金额格式不正确，请使用：存款 <数字>")
+            await send_text_reply(
+                event, "金额格式不正确，请使用：存款 <数字> 或 存款（全部存入）"
+            )
             return
-
-        try:
-            amount = float(match.group(2))
-            if amount <= 0:
-                await send_text_reply(event, "存款金额必须大于0。")
-                return
-        except ValueError:
-            await send_text_reply(event, "金额格式不正确，请使用：存款 <数字>")
-            return
-
-        # 限制金额精度为一位小数
-        amount = round(amount, 1)
 
         user_id = str(event.get_sender_id())
         user_data = await self.data_manager.get_user_data(group_id, user_id)
+
+        # 判断是否指定了金额
+        if match.group(2):
+            # 指定了金额
+            try:
+                amount = float(match.group(2))
+                if amount <= 0:
+                    await send_text_reply(event, "存款金额必须大于0。")
+                    return
+            except ValueError:
+                await send_text_reply(event, "金额格式不正确，请使用：存款 <数字>")
+                return
+            # 限制金额精度为一位小数
+            amount = round(amount, 1)
+        else:
+            # 未指定金额，存入全部现金
+            amount = user_data["coins"]
+            if amount <= 0:
+                await send_text_reply(event, "您当前没有现金可以存入。")
+                return
 
         # 使用整数比较避免浮点精度问题
         amount_int = int(amount * 10)
@@ -1663,9 +1673,14 @@ class ContractSystem(Star):
         await self.data_manager.save_user_data(group_id, user_id, user_data)
 
         currency = self._get_currency_name()
-        await send_text_reply(event, f"成功存入 {amount:.1f} {currency}到银行。")
+        if match.group(2):
+            await send_text_reply(event, f"成功存入 {amount:.1f} {currency}到银行。")
+        else:
+            await send_text_reply(
+                event, f"成功存入全部现金 {amount:.1f} {currency}到银行。"
+            )
 
-    @filter.regex(r"^(取款|取钱)\s*([0-9.]+)$")
+    @filter.regex(r"^(取款|取钱)$|^(取款|取钱)\s+([0-9.]+)$")
     async def withdraw(self, event: AstrMessageEvent):
         if not is_at_bot(event):
             return
@@ -1681,26 +1696,36 @@ class ContractSystem(Star):
             return
 
         # Parse amount from message
-        message_str = event.message_str
-        match = __import__("re").match(r"^(取款|取钱)\s*([0-9.]+)$", message_str)
+        message_str = event.message_str.strip()
+        match = __import__("re").match(r"^(取款|取钱)(?:\s+([0-9.]+))?$", message_str)
         if not match:
-            await send_text_reply(event, "金额格式不正确，请使用：取款 <数字>")
+            await send_text_reply(
+                event, "金额格式不正确，请使用：取款 <数字> 或 取款（全部取出）"
+            )
             return
-
-        try:
-            amount = float(match.group(2))
-            if amount <= 0:
-                await send_text_reply(event, "取款金额必须大于0。")
-                return
-        except ValueError:
-            await send_text_reply(event, "金额格式不正确，请使用：取款 <数字>")
-            return
-
-        # 限制金额精度为一位小数
-        amount = round(amount, 1)
 
         user_id = str(event.get_sender_id())
         user_data = await self.data_manager.get_user_data(group_id, user_id)
+
+        # 判断是否指定了金额
+        if match.group(2):
+            # 指定了金额
+            try:
+                amount = float(match.group(2))
+                if amount <= 0:
+                    await send_text_reply(event, "取款金额必须大于0。")
+                    return
+            except ValueError:
+                await send_text_reply(event, "金额格式不正确，请使用：取款 <数字>")
+                return
+            # 限制金额精度为一位小数
+            amount = round(amount, 1)
+        else:
+            # 未指定金额，取出全部存款
+            amount = user_data["bank"]
+            if amount <= 0:
+                await send_text_reply(event, "您当前没有银行存款可以取出。")
+                return
 
         # 使用整数比较避免浮点精度问题
         amount_int = int(amount * 10)
@@ -1718,7 +1743,10 @@ class ContractSystem(Star):
         await self.data_manager.save_user_data(group_id, user_id, user_data)
 
         currency = self._get_currency_name()
-        await send_text_reply(event, f"成功取出 {amount:.1f} {currency}。")
+        if match.group(2):
+            await send_text_reply(event, f"成功取出 {amount:.1f} {currency}。")
+        else:
+            await send_text_reply(event, f"成功取出全部存款 {amount:.1f} {currency}。")
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def on_at_bot(self, event: AstrMessageEvent):
