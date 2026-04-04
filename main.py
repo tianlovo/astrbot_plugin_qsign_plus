@@ -977,29 +977,25 @@ class ContractSystem(Star):
         # 检查是否在交易时段
         is_trading = self.trading_hours_service.is_trading_time()
 
-        # 非交易时段时免费查询，不消耗次数
-        if not is_trading:
-            next_opening = self.trading_hours_service.format_next_opening()
-            await send_text_reply(
-                event,
-                f"当前非交易时段，汇率查询免费。\n{next_opening}",
-            )
-            return
-
-        # 检查使用次数限制（仅在交易时段内检查）
+        # 检查使用次数限制（仅在交易时段内检查，非交易时段免费）
         user_data = await self.data_manager.get_user_data(group_id, user_id)
         wealth_level, _ = await self.wealth_system.get_wealth_info(
             group_id, user_data, user_id
         )
-        can_use, used_count, max_count = await self.stock_limit_service.check_limit(
-            group_id, user_id, "exchange_query", wealth_level
-        )
-        if not can_use:
-            await send_text_reply(
-                event,
-                f"今日汇率查询次数已用完（上限{max_count}次），请明日0点后再试。",
+        
+        # 非交易时段跳过次数检查
+        if is_trading:
+            can_use, used_count, max_count = await self.stock_limit_service.check_limit(
+                group_id, user_id, "exchange_query", wealth_level
             )
-            return
+            if not can_use:
+                await send_text_reply(
+                    event,
+                    f"今日汇率查询次数已用完（上限{max_count}次），请明日0点后再试。",
+                )
+                return
+        else:
+            wealth_level = "免费查询"
 
         # 获取群主信息
         owner_id = None
@@ -1073,6 +1069,13 @@ class ContractSystem(Star):
             info_text += "暂无每日平均汇率数据\n"
 
         info_text += f"\n{self.owner_currency_manager.DISCLAIMER}"
+
+        # 非交易时段添加提示，不消耗次数
+        if not is_trading:
+            next_opening = self.trading_hours_service.format_next_opening()
+            info_text += f"\n\n[非交易时段，{next_opening}]"
+            await send_text_reply(event, info_text)
+            return
 
         # 增加使用次数并获取剩余次数
         await self.stock_limit_service.increment_limit(
