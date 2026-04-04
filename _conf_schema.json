@@ -295,8 +295,26 @@
             "description": "出售基础次数",
             "default": 2,
             "hint": "平民等级每日可出售群主币的次数"
+          },
+          "wealth_level_bonus": {
+            "type": "int",
+            "description": "财富等级次数加成",
+            "default": 1,
+            "hint": "每提升一个财富等级，每日次数上限增加的次数。例如：平民3次，小资3+1=4次"
           }
         }
+      },
+      "cleanup_interval_hours": {
+        "type": "int",
+        "description": "汇率历史清理间隔",
+        "default": 24,
+        "hint": "自动清理旧汇率历史记录的时间间隔（小时），默认24小时"
+      },
+      "cleanup_keep_days": {
+        "type": "int",
+        "description": "汇率历史保留天数",
+        "default": 30,
+        "hint": "汇率历史记录保留的天数，超过此天数的记录将被自动清理"
       }
     }
   },

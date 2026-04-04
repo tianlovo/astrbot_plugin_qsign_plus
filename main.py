@@ -16,6 +16,7 @@ from .core.stock_limit_service import StockLimitService
 from .core.wealth_calculator import WealthCalculator
 from .core.wealth_system import WealthSystem
 from .services.card_renderer import CardRenderer
+from .services.exchange_rate_cleanup_service import ExchangeRateCleanupService
 from .services.exchange_rate_service import ExchangeRateService
 from .services.image_cache import ImageCacheService
 from .utils.helpers import (
@@ -100,6 +101,13 @@ class ContractSystem(Star):
             config=config,
         )
         asyncio.create_task(self.exchange_rate_service.start())
+
+        # 初始化并启动汇率历史清理后台服务
+        self.exchange_rate_cleanup_service = ExchangeRateCleanupService(
+            data_manager=self.data_manager,
+            config=config,
+        )
+        asyncio.create_task(self.exchange_rate_cleanup_service.start())
 
     async def _sync_redeem_codes(self):
         """同步兑换码配置到数据库"""

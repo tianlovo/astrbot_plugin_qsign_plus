@@ -10,20 +10,19 @@ import pytz
 
 from astrbot.api import logger
 
-# 财富等级对应的次数上限配置
-# 格式: (等级名称, 汇率查询次数, 购买次数, 出售次数)
-WEALTH_LEVEL_LIMITS = {
-    "平民": (3, 2, 2),
-    "小资": (4, 3, 3),
-    "富豪": (5, 4, 4),
-    "巨擘": (6, 5, 5),
-    "权贵": (7, 6, 6),
-    "领主": (8, 7, 7),
-    "霸主": (9, 8, 8),
-    "王者": (10, 9, 9),
-    "传奇": (12, 10, 10),
-    "神话": (15, 12, 12),
-}
+# 财富等级顺序列表，用于确定等级索引
+WEALTH_LEVEL_ORDER = [
+    "平民",
+    "小资",
+    "富豪",
+    "巨擘",
+    "权贵",
+    "领主",
+    "霸主",
+    "王者",
+    "传奇",
+    "神话",
+]
 
 
 class StockLimitService:
@@ -51,8 +50,34 @@ class StockLimitService:
         """
         return datetime.now(self.shanghai_tz).strftime("%Y-%m-%d")
 
+    def _get_wealth_level_index(self, wealth_level: str) -> int:
+        """获取财富等级索引
+
+        Args:
+            wealth_level: 财富等级名称
+
+        Returns:
+            等级索引（平民=1, 小资=2, ...），未知等级返回1
+        """
+        try:
+            return WEALTH_LEVEL_ORDER.index(wealth_level) + 1
+        except ValueError:
+            logger.warning(f"[股市限制] 未知的财富等级: {wealth_level}")
+            return 1
+
+    def _get_rate_limit_config(self) -> dict:
+        """获取限制配置
+
+        Returns:
+            限制配置字典
+        """
+        stock_config = self.config.get("stock_market", {})
+        return stock_config.get("rate_limit", {})
+
     def get_limit_by_wealth_level(self, wealth_level: str) -> tuple[int, int, int]:
         """根据财富等级获取次数上限
+
+        计算公式：次数上限 = 基础次数 + (财富等级索引 - 1) × 等级加成
 
         Args:
             wealth_level: 财富等级名称
@@ -60,7 +85,26 @@ class StockLimitService:
         Returns:
             (汇率查询次数, 购买次数, 出售次数) 元组
         """
-        return WEALTH_LEVEL_LIMITS.get(wealth_level, (3, 2, 2))
+        rate_limit_config = self._get_rate_limit_config()
+
+        # 获取基础次数配置（默认值）
+        base_exchange = rate_limit_config.get("base_exchange_query", 3)
+        base_buy = rate_limit_config.get("base_buy", 2)
+        base_sell = rate_limit_config.get("base_sell", 2)
+
+        # 获取等级加成配置（默认每级加1次）
+        level_bonus = rate_limit_config.get("wealth_level_bonus", 1)
+
+        # 获取财富等级索引
+        level_index = self._get_wealth_level_index(wealth_level)
+
+        # 计算次数上限
+        bonus = (level_index - 1) * level_bonus
+        exchange_limit = base_exchange + bonus
+        buy_limit = base_buy + bonus
+        sell_limit = base_sell + bonus
+
+        return (exchange_limit, buy_limit, sell_limit)
 
     async def check_limit(
         self, group_id: str, user_id: str, limit_type: str, wealth_level: str
