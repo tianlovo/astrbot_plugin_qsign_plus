@@ -1927,9 +1927,24 @@ class ContractSystem(Star):
         user_id = str(event.get_sender_id())
 
         # 尝试触发自动签到
-        await self.auto_checkin_service.perform_auto_checkin(
+        result = await self.auto_checkin_service.perform_auto_checkin(
             user_id, group_id, event, self.sign_in
         )
+
+        # 如果需要回复（首次处理该用户）
+        if result.get("should_reply", False):
+            # 已签到，发送引用提示
+            if result.get("already_signed", False):
+                from astrbot.api.message_components import Reply, Plain
+                reply_seg = Reply(id=event.message_obj.message_id)
+                text_seg = Plain("今日已自动签到，无需重复操作。")
+                await event.send(event.chain_result([reply_seg, text_seg]))
+            # 未签到但签到失败
+            elif not result.get("success", False):
+                from astrbot.api.message_components import Reply, Plain
+                reply_seg = Reply(id=event.message_obj.message_id)
+                text_seg = Plain("自动签到失败，请稍后重试或手动签到。")
+                await event.send(event.chain_result([reply_seg, text_seg]))
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def on_at_bot(self, event: AstrMessageEvent):
