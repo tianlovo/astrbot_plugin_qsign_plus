@@ -17,6 +17,7 @@ from .core.stock_limit_service import StockLimitService
 from .core.trading_hours import TradingHoursService
 from .core.wealth_calculator import WealthCalculator
 from .core.wealth_system import WealthSystem
+from .services.auto_checkin_reset_service import AutoCheckinResetService
 from .services.card_renderer import CardRenderer
 from .services.exchange_rate_cleanup_service import ExchangeRateCleanupService
 from .services.exchange_rate_service import ExchangeRateService
@@ -100,6 +101,12 @@ class ContractSystem(Star):
 
         # 初始化自动签到服务
         self.auto_checkin_service = AutoCheckinService(self.data_manager)
+
+        # 初始化并启动自动签到缓存重置服务
+        self.auto_checkin_reset_service = AutoCheckinResetService(
+            self.auto_checkin_service
+        )
+        asyncio.create_task(self.auto_checkin_reset_service.start())
 
         # 初始化并启动汇率更新后台服务
         self.exchange_rate_service = ExchangeRateService(
@@ -2083,6 +2090,10 @@ class ContractSystem(Star):
 
     async def terminate(self):
         """插件终止时关闭资源"""
+        # 停止自动签到缓存重置服务
+        if hasattr(self, "auto_checkin_reset_service"):
+            await self.auto_checkin_reset_service.stop()
+
         # 停止汇率更新后台服务
         if hasattr(self, "exchange_rate_service"):
             await self.exchange_rate_service.stop()
