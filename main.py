@@ -1214,15 +1214,7 @@ class ContractSystem(Star):
         # 获取目标用户数据
         target_data = await self.data_manager.get_user_data(group_id, target_id)
 
-        # 检查用户现金是否足够
-        if target_data["coins"] < amount:
-            await send_text_reply(
-                event,
-                f"❌ 操作失败！\n用户现金不足，当前现金：{target_data['coins']:.1f} {self._get_currency_name()}",
-            )
-            return
-
-        # 扣除现金
+        # 扣除现金（允许扣到负数）
         target_data["coins"] -= amount
         await self.data_manager.save_user_data(group_id, target_id, target_data)
 
