@@ -36,6 +36,19 @@
       }
     }
   },
+  "auto_checkin": {
+    "description": "自动签到配置",
+    "type": "object",
+    "hint": "自动签到功能配置，启用后用户每天0点后首次发言将自动触发签到",
+    "items": {
+      "enabled": {
+        "type": "bool",
+        "description": "启用自动签到",
+        "default": false,
+        "hint": "启用后，用户每天0点后首次发言将自动触发签到，同时禁用手动签到指令"
+      }
+    }
+  },
   "trade": {
     "description": "交易配置",
     "type": "object",

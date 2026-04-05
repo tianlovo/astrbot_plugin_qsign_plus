@@ -9,6 +9,7 @@ from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
 
+from .core.auto_checkin_service import AutoCheckinService
 from .core.data_manager import DataManager
 from .core.exchange_rate import ExchangeRateCalculator, ExchangeRateHistory
 from .core.owner_currency import OwnerCurrencyManager
@@ -96,6 +97,9 @@ class ContractSystem(Star):
 
         # 初始化交易时段服务
         self.trading_hours_service = TradingHoursService(config)
+
+        # 初始化自动签到服务
+        self.auto_checkin_service = AutoCheckinService(self.data_manager)
 
         # 初始化并启动汇率更新后台服务
         self.exchange_rate_service = ExchangeRateService(
@@ -1225,14 +1229,29 @@ class ContractSystem(Star):
         )
 
     @filter.regex(r"^签到$")
-    async def sign_in(self, event: AstrMessageEvent):
-        if not is_at_bot(event):
+    async def sign_in(self, event: AstrMessageEvent, is_auto: bool = False):
+        """签到处理
+
+        Args:
+            event: 消息事件
+            is_auto: 是否为自动签到触发
+        """
+        if not is_at_bot(event) and not is_auto:
             return
 
         group_id = str(event.message_obj.group_id)
         basic_config = self.config.get("basic", {})
         if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
             return
+
+        # 检查自动签到配置（仅手动签到时检查）
+        if not is_auto:
+            auto_checkin_config = self.config.get("auto_checkin", {})
+            if auto_checkin_config.get("enabled", False):
+                await send_text_reply(
+                    event, "自动签到已启用，每天0点后首次发言将自动签到，无需手动操作。"
+                )
+                return
 
         # 检查维护模式
         if self._is_maintenance_mode():
@@ -1323,7 +1342,14 @@ class ContractSystem(Star):
             )
 
             sign_text += f"👥 雇员数量: {len(user_data['contractors'])} 人"
-            await send_text_reply(event, sign_text)
+            
+            # 自动签到时引用原消息
+            if is_auto:
+                from astrbot.api.message_components import Reply
+                reply_seg = Reply(id=event.message_obj.message_id)
+                await event.send([reply_seg, sign_text])
+            else:
+                await send_text_reply(event, sign_text)
             return
 
         # Generate card
@@ -1868,6 +1894,34 @@ class ContractSystem(Star):
             await send_text_reply(event, f"成功取出 {amount:.1f} {currency}。")
         else:
             await send_text_reply(event, f"成功取出全部存款 {amount:.1f} {currency}。")
+
+    @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
+    async def on_group_message(self, event: AstrMessageEvent):
+        """监听群消息事件，处理自动签到"""
+        # 检查数据库是否已初始化
+        if not self.data_manager.is_db_initialized():
+            return
+
+        # 检查自动签到是否启用
+        auto_checkin_config = self.config.get("auto_checkin", {})
+        if not auto_checkin_config.get("enabled", False):
+            return
+
+        group_id = str(event.message_obj.group_id)
+        basic_config = self.config.get("basic", {})
+        if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
+            return
+
+        # 检查维护模式
+        if self._is_maintenance_mode():
+            return
+
+        user_id = str(event.get_sender_id())
+
+        # 尝试触发自动签到
+        await self.auto_checkin_service.perform_auto_checkin(
+            user_id, group_id, event, self.sign_in
+        )
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def on_at_bot(self, event: AstrMessageEvent):
