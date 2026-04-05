@@ -115,9 +115,14 @@ class AutoCheckinService:
             if not last_sign:
                 return False
 
-            # 解析上次签到时间
+            # 解析上次签到时间（支持多种格式）
             try:
-                last_sign_dt = datetime.strptime(last_sign, "%Y-%m-%d %H:%M:%S")
+                # 尝试解析 ISO 格式 (2026-04-03T11:06:22.859891)
+                if 'T' in last_sign:
+                    last_sign_dt = datetime.fromisoformat(last_sign.replace('Z', '+00:00'))
+                else:
+                    # 尝试解析普通格式 (2026-04-03 11:06:22)
+                    last_sign_dt = datetime.strptime(last_sign, "%Y-%m-%d %H:%M:%S")
                 return not self.is_new_day(last_sign_dt)
             except ValueError:
                 logger.warning(f"[自动签到] 无法解析上次签到时间: {last_sign}")

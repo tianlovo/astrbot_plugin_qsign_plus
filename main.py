@@ -1345,9 +1345,10 @@ class ContractSystem(Star):
             
             # 自动签到时引用原消息
             if is_auto:
-                from astrbot.api.message_components import Reply
+                from astrbot.api.message_components import Reply, Plain
                 reply_seg = Reply(id=event.message_obj.message_id)
-                await event.send([reply_seg, sign_text])
+                text_seg = Plain(sign_text)
+                await event.send([reply_seg, text_seg])
             else:
                 await send_text_reply(event, sign_text)
             return
