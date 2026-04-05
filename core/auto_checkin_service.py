@@ -155,19 +155,22 @@ class AutoCheckinService:
         Returns:
             是否成功触发自动签到
         """
-        # 检查是否应该触发
-        if not self.should_auto_checkin(user_id, group_id):
-            return False
+        # 1. 先检查内存缓存，如果已有记录则跳过（今日已处理过该用户）
+        if group_id in self._auto_checked_in_today:
+            if user_id in self._auto_checked_in_today[group_id]:
+                return False
 
-        # 检查今日是否已签到
-        if await self.has_checked_in_today(user_id, group_id):
-            self.mark_auto_checked_in(user_id, group_id)
-            return False
-
-        # 标记为已自动签到（防止重复触发）
+        # 2. 检查今日是否已签到（数据库中）
+        has_signed = await self.has_checked_in_today(user_id, group_id)
+        
+        # 3. 标记到内存缓存（无论是否已签到，都标记为已处理，今日不再检查）
         self.mark_auto_checked_in(user_id, group_id)
+        
+        # 4. 如果已签到，直接返回
+        if has_signed:
+            return False
 
-        # 触发签到
+        # 5. 未签到，触发自动签到
         try:
             await sign_in_handler(event, is_auto=True)
             return True
