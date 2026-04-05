@@ -1348,7 +1348,7 @@ class ContractSystem(Star):
                 from astrbot.api.message_components import Reply, Plain
                 reply_seg = Reply(id=event.message_obj.message_id)
                 text_seg = Plain(sign_text)
-                await event.send([reply_seg, text_seg])
+                await event.send(event.chain_result([reply_seg, text_seg]))
             else:
                 await send_text_reply(event, sign_text)
             return
