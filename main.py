@@ -830,13 +830,18 @@ class ContractSystem(Star):
             current_rate = stock_config.get("base_exchange_rate", 1.0)
             await self.exchange_history.record_rate(group_id, current_rate)
 
+        # 获取手续费率
+        stock_config = self.config.get("stock_market", {})
+        fee_rate = stock_config.get("transaction_fee_rate", 0.15)
+
         # 执行购买
         (
             success,
             message,
             actual_amount,
+            actual_cost,
         ) = await self.owner_currency_manager.buy_currency(
-            group_id, user_id, amount, current_rate
+            group_id, user_id, amount, current_rate, fee_rate
         )
 
         if success:
@@ -844,7 +849,10 @@ class ContractSystem(Star):
             owner_name = await self._get_user_name_from_platform(event, target_id)
             currency_name = self._get_currency_name()
             currency_unit = self.owner_currency_manager.format_currency_name(owner_name)
-            cost = self.exchange_calculator.calculate_buy_cost(amount, current_rate)
+
+            # 计算不含手续费的成本
+            base_cost = amount * current_rate
+            fee_amount = actual_cost - base_cost
 
             # 增加使用次数并获取剩余次数
             await self.stock_limit_service.increment_limit(group_id, user_id, "buy")
@@ -855,8 +863,9 @@ class ContractSystem(Star):
 
             await send_text_reply(
                 event,
-                f"购买成功！您花费 {cost:.1f} {currency_name} 购买了 {actual_amount:.3f} {currency_unit}\n"
+                f"购买成功！您花费 {actual_cost:.1f} {currency_name} 购买了 {actual_amount:.3f} {currency_unit}\n"
                 f"当前汇率: 1 {currency_unit} = {current_rate:.4f} {currency_name}\n"
+                f"手续费: {fee_rate*100:.0f}% (约 {fee_amount:.1f} {currency_name})\n"
                 f"{self.owner_currency_manager.DISCLAIMER}\n\n"
                 f"{limit_msg}",
             )
@@ -939,21 +948,25 @@ class ContractSystem(Star):
             await send_text_reply(event, "无效的出售数量。")
             return
 
-        # 获取当前汇率
+        # 获取当前汇率和手续费率
+        stock_config = self.config.get("stock_market", {})
         current_rate = await self.exchange_history.get_current_rate(group_id)
         if current_rate is None:
-            stock_config = self.config.get("stock_market", {})
             current_rate = stock_config.get("base_exchange_rate", 1.0)
+        fee_rate = stock_config.get("transaction_fee_rate", 0.15)
 
         # 执行出售
-        success, message, revenue = await self.owner_currency_manager.sell_currency(
-            group_id, user_id, amount, current_rate
+        success, message, actual_revenue, fee_amount = await self.owner_currency_manager.sell_currency(
+            group_id, user_id, amount, current_rate, fee_rate
         )
 
         if success:
             owner_name = await self._get_user_name_from_platform(event, target_id)
             currency_name = self._get_currency_name()
             currency_unit = self.owner_currency_manager.format_currency_name(owner_name)
+
+            # 计算不含手续费的收益
+            base_revenue = amount * current_rate
 
             # 增加使用次数并获取剩余次数
             await self.stock_limit_service.increment_limit(group_id, user_id, "sell")
@@ -964,8 +977,9 @@ class ContractSystem(Star):
 
             await send_text_reply(
                 event,
-                f"出售成功！您出售了 {amount:.3f} {currency_unit}，获得 {revenue:.1f} {currency_name}\n"
+                f"出售成功！您出售了 {amount:.3f} {currency_unit}，获得 {actual_revenue:.1f} {currency_name}\n"
                 f"当前汇率: 1 {currency_unit} = {current_rate:.4f} {currency_name}\n"
+                f"手续费: {fee_rate*100:.0f}% (约 {fee_amount:.1f} {currency_name})\n"
                 f"{self.owner_currency_manager.DISCLAIMER}\n\n"
                 f"{limit_msg}",
             )

@@ -47,8 +47,8 @@ class OwnerCurrencyManager:
         self.calculator = calculator
 
     async def buy_currency(
-        self, group_id: str, user_id: str, amount: float, rate: float
-    ) -> tuple[bool, str, float]:
+        self, group_id: str, user_id: str, amount: float, rate: float, fee_rate: float = 0.15
+    ) -> tuple[bool, str, float, float]:
         """购买群主货币
 
         Args:
@@ -56,51 +56,56 @@ class OwnerCurrencyManager:
             user_id: 用户ID
             amount: 购买数量
             rate: 当前汇率
+            fee_rate: 交易手续费率，默认0.15（15%）
 
         Returns:
-            (是否成功, 消息, 实际购买数量)
+            (是否成功, 消息, 实际购买数量, 实际花费)
         """
         # 限制精度为3位小数（群主货币）
         amount = truncate_decimal(amount, self.OWNER_CURRENCY_PRECISION)
         if amount <= 0:
             raise InvalidAmountError("购买数量必须大于0")
 
-        # 计算所需货币成本（普通货币截断至1位小数）
-        cost = self.calculator.calculate_buy_cost(amount, rate)
-        cost = truncate_decimal(cost, self.NORMAL_CURRENCY_PRECISION)
+        # 计算所需货币成本（含手续费）
+        # 实际成本 = 数量 × 汇率 ÷ (1 - 手续费率)
+        base_cost = amount * rate
+        actual_cost = base_cost / (1 - fee_rate)
+        actual_cost = truncate_decimal(actual_cost, self.NORMAL_CURRENCY_PRECISION)
 
         # 获取用户数据
         user_data = await self.data_manager.get_user_data(group_id, user_id)
 
         # 检查余额（使用整数比较避免浮点精度问题）
-        cost_int = int(cost * 10)
+        cost_int = int(actual_cost * 10)
         coins_int = int(user_data["coins"] * 10)
         if cost_int > coins_int:
             return (
                 False,
                 f"现金不足，当前现金：{user_data['coins']:.1f}\n{self.DISCLAIMER}",
                 0.0,
+                0.0,
             )
 
         # 扣除用户货币
-        user_data["coins"] -= cost
+        user_data["coins"] -= actual_cost
         await self.data_manager.save_user_data(group_id, user_id, user_data)
 
         # 增加群主货币余额
         await self.data_manager.add_owner_currency_balance(group_id, user_id, amount)
 
         logger.info(
-            f"[群主货币购买] 群 {group_id} 用户 {user_id}: 购买 {amount}, 花费 {cost}"
+            f"[群主货币购买] 群 {group_id} 用户 {user_id}: 购买 {amount}, 花费 {actual_cost}, 手续费率 {fee_rate}"
         )
         return (
             True,
-            f"成功购买 {amount:.3f} 群主货币，花费 {cost:.1f}\n{self.DISCLAIMER}",
+            f"成功购买 {amount:.3f} 群主货币，花费 {actual_cost:.1f}\n{self.DISCLAIMER}",
             amount,
+            actual_cost,
         )
 
     async def sell_currency(
-        self, group_id: str, user_id: str, amount: float, rate: float
-    ) -> tuple[bool, str, float]:
+        self, group_id: str, user_id: str, amount: float, rate: float, fee_rate: float = 0.15
+    ) -> tuple[bool, str, float, float]:
         """出售群主货币
 
         Args:
@@ -108,9 +113,10 @@ class OwnerCurrencyManager:
             user_id: 用户ID
             amount: 出售数量
             rate: 当前汇率
+            fee_rate: 交易手续费率，默认0.15（15%）
 
         Returns:
-            (是否成功, 消息, 实际获得金额)
+            (是否成功, 消息, 实际获得金额, 手续费金额)
         """
         # 限制精度为3位小数（群主货币）
         amount = truncate_decimal(amount, self.OWNER_CURRENCY_PRECISION)
@@ -128,27 +134,32 @@ class OwnerCurrencyManager:
                 False,
                 f"群主货币不足，当前余额：{balance:.3f}\n{self.DISCLAIMER}",
                 0.0,
+                0.0,
             )
 
-        # 计算出售获得金额（普通货币截断至1位小数）
-        revenue = self.calculator.calculate_sell_revenue(amount, rate)
-        revenue = truncate_decimal(revenue, self.NORMAL_CURRENCY_PRECISION)
+        # 计算出售获得金额（扣除手续费）
+        # 实际收益 = 数量 × 汇率 × (1 - 手续费率)
+        base_revenue = amount * rate
+        actual_revenue = base_revenue * (1 - fee_rate)
+        actual_revenue = truncate_decimal(actual_revenue, self.NORMAL_CURRENCY_PRECISION)
+        fee_amount = truncate_decimal(base_revenue - actual_revenue, self.NORMAL_CURRENCY_PRECISION)
 
         # 扣除群主货币余额
         await self.data_manager.add_owner_currency_balance(group_id, user_id, -amount)
 
         # 增加用户货币
         user_data = await self.data_manager.get_user_data(group_id, user_id)
-        user_data["coins"] += revenue
+        user_data["coins"] += actual_revenue
         await self.data_manager.save_user_data(group_id, user_id, user_data)
 
         logger.info(
-            f"[群主货币出售] 群 {group_id} 用户 {user_id}: 出售 {amount}, 获得 {revenue}"
+            f"[群主货币出售] 群 {group_id} 用户 {user_id}: 出售 {amount}, 获得 {actual_revenue}, 手续费 {fee_amount}, 手续费率 {fee_rate}"
         )
         return (
             True,
-            f"成功出售 {amount:.3f} 群主货币，获得 {revenue:.1f}\n{self.DISCLAIMER}",
-            revenue,
+            f"成功出售 {amount:.3f} 群主货币，获得 {actual_revenue:.1f}\n{self.DISCLAIMER}",
+            actual_revenue,
+            fee_amount,
         )
 
     async def get_balance(self, group_id: str, user_id: str) -> float:
