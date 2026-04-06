@@ -153,6 +153,10 @@ class WealthGapPenaltyService:
 
     async def _check_all_groups(self) -> None:
         """检查所有启用群的财富榜差距（检测间隔）"""
+        # 检查数据库是否已初始化
+        if not self._data_manager.is_db_initialized():
+            return
+
         penalty_config = self._config.get("wealth_gap_penalty", {})
         if not penalty_config.get("enabled", True):
             return
@@ -168,6 +172,10 @@ class WealthGapPenaltyService:
 
     async def _apply_penalty_to_all_groups(self) -> None:
         """对所有有debuff的用户执行扣除（扣除间隔）"""
+        # 检查数据库是否已初始化
+        if not self._data_manager.is_db_initialized():
+            return
+
         penalty_config = self._config.get("wealth_gap_penalty", {})
         if not penalty_config.get("enabled", True):
             return
