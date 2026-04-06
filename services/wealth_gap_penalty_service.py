@@ -379,14 +379,26 @@ class WealthGapPenaltyService:
             group_id, user_id, True, penalty_rate, now
         )
 
+        # 获取用户数据并执行首次扣除
+        user_data = await self._data_manager.get_user_data(group_id, user_id)
+        current_coins = user_data.get("coins", 0)
+        penalty_amount = current_coins * penalty_rate
+        new_coins = current_coins - penalty_amount
+        user_data["coins"] = new_coins
+        await self._data_manager.save_user_data(group_id, user_id, user_data)
+
+        # 更新上次惩罚时间
+        await self._data_manager.update_penalty_last_time(group_id, user_id, now)
+
         # 发送通知
         await self._send_debuff_notification(
             group_id, user_id, gap, penalty_rate, is_applying=True
         )
 
         logger.info(
-            f"[财富差距惩罚] 群 {group_id} 用户 {user_id} 获得厄运debuff，"
-            f"差距: {gap:.1f}, 扣除比例: {penalty_rate*100:.1f}%"
+            f"[财富差距惩罚] 群 {group_id} 用户 {user_id} 获得厄运，"
+            f"差距: {gap:.1f}, 扣除比例: {penalty_rate*100:.1f}%, "
+            f"首次扣除: {penalty_amount:.1f}, 剩余: {new_coins:.1f}"
         )
 
     async def _remove_debuff(self, group_id: str, user_id: str) -> None:
@@ -406,7 +418,7 @@ class WealthGapPenaltyService:
             group_id, user_id, 0, 0, is_applying=False
         )
 
-        logger.info(f"[财富差距惩罚] 群 {group_id} 用户 {user_id} 厄运debuff已解除")
+        logger.info(f"[财富差距惩罚] 群 {group_id} 用户 {user_id} 【厄运】已解除")
 
     async def _apply_penalty_deduction(
         self, group_id: str, user_id: str, current_wealth: float, gap: float
@@ -508,14 +520,14 @@ class WealthGapPenaltyService:
                 message_text = (
                     f"⚠️ 厄运降临！\n"
                     f"由于您当前财富榜第一，且与第二名差距过大（{gap:.1f}），"
-                    f"您已获得【厄运】debuff。\n"
+                    f"您已获得【厄运】。\n"
                     f"每小时将扣除您 {penalty_rate*100:.1f}% 的现金，"
                     f"直到差距缩小到阈值以下。"
                 )
             else:
                 message_text = (
                     f"✨ 厄运解除！\n"
-                    f"您与第二名的差距已缩小到阈值以下，【厄运】debuff已解除。"
+                    f"您与第二名的差距已缩小到阈值以下，【厄运】已解除。"
                 )
 
             # 构建消息链
