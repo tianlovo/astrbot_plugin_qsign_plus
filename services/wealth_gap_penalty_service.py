@@ -635,6 +635,7 @@ class WealthGapPenaltyService:
                     f"由于您当前财富榜第一，且与第二名差距过大（{gap:.1f}），"
                     f"您已获得【厄运】。\n"
                     f"每小时将扣除您 {penalty_rate*100:.1f}% 的现金，"
+                    f"扣除的金额将均分给财富榜前10名的其他群友。\n"
                     f"直到差距缩小到阈值以下。"
                 )
             else:
