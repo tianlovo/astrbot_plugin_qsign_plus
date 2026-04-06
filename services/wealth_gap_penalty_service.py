@@ -10,13 +10,11 @@
 
 import asyncio
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from astrbot.api import logger
 
 if TYPE_CHECKING:
-    from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_adapter import AiocqhttpAdapter
-
     from ..core.data_manager import DataManager
     from ..core.wealth_calculator import WealthCalculator
 
