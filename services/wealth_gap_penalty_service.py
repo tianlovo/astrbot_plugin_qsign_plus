@@ -666,7 +666,7 @@ class WealthGapPenaltyService:
             return f"用户{user_id[-4:]}"
         except Exception as e:
             logger.debug(f"[财富差距惩罚] 获取用户昵称失败: {e}")
-            return f"用户{user_id[-4:]}"}
+            return f"用户{user_id[-4:]}"
 
     async def _send_debuff_notification(
         self,
