@@ -502,6 +502,7 @@ class WealthGapPenaltyService:
 
         try:
             from astrbot.api.message_components import At, Plain
+            from astrbot.core.message.message_event_result import MessageChain
 
             if is_applying:
                 message_text = (
@@ -518,7 +519,7 @@ class WealthGapPenaltyService:
                 )
 
             # 构建消息链
-            chain = [At(qq=user_id), Plain(message_text)]
+            chain = MessageChain([At(qq=user_id), Plain(message_text)])
 
             # 获取群的 unified_msg_origin
             umo = self._get_group_umo(group_id)
