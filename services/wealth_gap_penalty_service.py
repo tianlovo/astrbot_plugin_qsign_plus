@@ -241,16 +241,20 @@ class WealthGapPenaltyService:
         first_user_id, first_wealth = user_wealth_list[0]
         second_user_id, second_wealth = user_wealth_list[1]
 
-        # 计算差距
-        gap = first_wealth - second_wealth
+        # 计算相对差距百分比（以第二名为基准）
+        if second_wealth > 0:
+            gap_ratio = (first_wealth - second_wealth) / second_wealth
+        else:
+            gap_ratio = 0.0
 
         # 获取配置
         penalty_config = self._config.get("wealth_gap_penalty", {})
-        gap_threshold = penalty_config.get("gap_threshold", 2000)
+        gap_threshold = penalty_config.get("gap_threshold", 0.5)  # 默认50%
 
         logger.debug(
-            f"[财富差距惩罚] 群 {group_id} 排名: 第一 {first_user_id}({first_wealth}), "
-            f"第二 {second_user_id}({second_wealth}), 差距 {gap}, 阈值 {gap_threshold}"
+            f"[财富差距惩罚] 群 {group_id} 排名: 第一 {first_user_id}({first_wealth:.1f}), "
+            f"第二 {second_user_id}({second_wealth:.1f}), "
+            f"相对差距 {gap_ratio*100:.2f}%, 阈值 {gap_threshold*100:.0f}%"
         )
 
         # 第一步：检查所有有debuff的用户，如果不是当前第一名或不符合条件，去除debuff
@@ -268,10 +272,10 @@ class WealthGapPenaltyService:
                     # 不是第一名，去除debuff
                     should_remove = True
                     remove_reason = f"不再是第一名（当前第一: {first_user_id}）"
-                elif gap <= gap_threshold:
+                elif gap_ratio <= gap_threshold:
                     # 是第一名但差距未超过阈值，去除debuff
                     should_remove = True
-                    remove_reason = f"差距 {gap} <= 阈值 {gap_threshold}"
+                    remove_reason = f"相对差距 {gap_ratio*100:.2f}% <= 阈值 {gap_threshold*100:.0f}%"
 
                 if should_remove:
                     logger.info(
@@ -280,17 +284,17 @@ class WealthGapPenaltyService:
                     await self._remove_debuff(group_id, user_id)
 
         # 第二步：检查当前第一名是否应该赋予debuff
-        if gap > gap_threshold:
+        if gap_ratio > gap_threshold:
             penalty_status = await self._data_manager.get_wealth_gap_penalty(
                 group_id, first_user_id
             )
 
             if not penalty_status["has_debuff"]:
                 logger.info(
-                    f"[财富差距惩罚] 群 {group_id} 用户 {first_user_id} 差距 {gap} > 阈值 {gap_threshold}，"
+                    f"[财富差距惩罚] 群 {group_id} 用户 {first_user_id} 相对差距 {gap_ratio*100:.2f}% > 阈值 {gap_threshold*100:.0f}%，"
                     f"准备赋予debuff"
                 )
-                await self._apply_debuff(group_id, first_user_id, gap, first_wealth)
+                await self._apply_debuff(group_id, first_user_id, gap_ratio, first_wealth)
             else:
                 logger.debug(
                     f"[财富差距惩罚] 群 {group_id} 用户 {first_user_id} 已有debuff，无需重复赋予"
@@ -329,12 +333,15 @@ class WealthGapPenaltyService:
         first_user_id, first_wealth = user_wealth_list[0]
         second_user_id, second_wealth = user_wealth_list[1]
 
-        # 计算差距
-        gap = first_wealth - second_wealth
+        # 计算相对差距百分比（以第二名为基准）
+        if second_wealth > 0:
+            gap_ratio = (first_wealth - second_wealth) / second_wealth
+        else:
+            gap_ratio = 0.0
 
         # 获取配置
         penalty_config = self._config.get("wealth_gap_penalty", {})
-        gap_threshold = penalty_config.get("gap_threshold", 2000)
+        gap_threshold = penalty_config.get("gap_threshold", 0.5)  # 默认50%
 
         # 获取当前debuff状态
         penalty_status = await self._data_manager.get_wealth_gap_penalty(
@@ -344,35 +351,36 @@ class WealthGapPenaltyService:
         # 只有有debuff的用户才处理
         if penalty_status["has_debuff"]:
             # 检查差距是否已缩小到阈值以下
-            if gap <= gap_threshold:
+            if gap_ratio <= gap_threshold:
                 # 差距已缩小，去除debuff
                 logger.info(
-                    f"[财富差距惩罚] 群 {group_id} 扣除后用户 {first_user_id} 差距 {gap} <= 阈值 {gap_threshold}，"
+                    f"[财富差距惩罚] 群 {group_id} 扣除后用户 {first_user_id} 相对差距 {gap_ratio*100:.2f}% <= 阈值 {gap_threshold*100:.0f}%，"
                     f"准备去除debuff"
                 )
                 await self._remove_debuff(group_id, first_user_id)
             else:
                 # 差距仍超过阈值，执行扣除
                 await self._apply_penalty_deduction(
-                    group_id, first_user_id, first_wealth, gap
+                    group_id, first_user_id, first_wealth, gap_ratio
                 )
 
-    async def _apply_debuff(self, group_id: str, user_id: str, gap: float, first_wealth: float) -> None:
+    async def _apply_debuff(self, group_id: str, user_id: str, gap_ratio: float, first_wealth: float) -> None:
         """赋予厄运debuff
 
         Args:
             group_id: 群ID
             user_id: 用户ID
-            gap: 当前差距
+            gap_ratio: 相对差距比例（如0.5表示50%）
             first_wealth: 第一名身价
         """
         penalty_config = self._config.get("wealth_gap_penalty", {})
         min_rate = penalty_config.get("min_penalty_rate", 0.01)
         max_rate = penalty_config.get("max_penalty_rate", 0.10)
-        max_gap = penalty_config.get("max_gap_for_calculation", 10000)
+        # 最大差距比例用于计算，默认100%（即差距100%时达到最大扣除比例）
+        max_gap_ratio = 1.0
 
         # 计算扣除比例
-        penalty_rate = self._calculate_penalty_rate(gap, min_rate, max_rate, max_gap)
+        penalty_rate = self._calculate_penalty_rate(gap_ratio, min_rate, max_rate, max_gap_ratio)
 
         # 保存debuff状态
         now = int(time.time())
@@ -395,12 +403,12 @@ class WealthGapPenaltyService:
 
         # 发送通知
         await self._send_debuff_notification(
-            group_id, user_id, gap, penalty_rate, is_applying=True
+            group_id, user_id, gap_ratio, penalty_rate, is_applying=True
         )
 
         logger.info(
             f"[财富差距惩罚] 群 {group_id} 用户 {user_id} 获得厄运，"
-            f"差距: {gap:.1f}, 扣除比例: {penalty_rate*100:.1f}%, "
+            f"相对差距: {gap_ratio*100:.2f}%, 扣除比例: {penalty_rate*100:.1f}%, "
             f"基于身价 {first_wealth:.1f} 首次扣除: {penalty_amount:.1f}, 现金剩余: {new_coins:.1f}"
         )
 
@@ -424,7 +432,7 @@ class WealthGapPenaltyService:
         logger.info(f"[财富差距惩罚] 群 {group_id} 用户 {user_id} 【厄运】已解除")
 
     async def _apply_penalty_deduction(
-        self, group_id: str, user_id: str, current_wealth: float, gap: float
+        self, group_id: str, user_id: str, current_wealth: float, gap_ratio: float
     ) -> None:
         """执行扣除财富操作
 
@@ -432,7 +440,7 @@ class WealthGapPenaltyService:
             group_id: 群ID
             user_id: 用户ID
             current_wealth: 当前身价
-            gap: 当前差距
+            gap_ratio: 相对差距比例（如0.5表示50%）
         """
         penalty_config = self._config.get("wealth_gap_penalty", {})
 
@@ -446,8 +454,9 @@ class WealthGapPenaltyService:
         # 更新扣除比例（根据当前差距动态调整）
         min_rate = penalty_config.get("min_penalty_rate", 0.01)
         max_rate = penalty_config.get("max_penalty_rate", 0.10)
-        max_gap = penalty_config.get("max_gap_for_calculation", 10000)
-        penalty_rate = self._calculate_penalty_rate(gap, min_rate, max_rate, max_gap)
+        # 最大差距比例用于计算，默认100%
+        max_gap_ratio = 1.0
+        penalty_rate = self._calculate_penalty_rate(gap_ratio, min_rate, max_rate, max_gap_ratio)
 
         # 计算扣除金额（基于身价，可扣到负数）
         penalty_amount = current_wealth * penalty_rate
@@ -475,24 +484,24 @@ class WealthGapPenaltyService:
             await self._redistribute_penalty_amount(group_id, user_id, penalty_amount)
 
     def _calculate_penalty_rate(
-        self, gap: float, min_rate: float, max_rate: float, max_gap: float
+        self, gap_ratio: float, min_rate: float, max_rate: float, max_gap_ratio: float
     ) -> float:
         """计算扣除比例
 
         Args:
-            gap: 当前差距
+            gap_ratio: 相对差距比例（如0.5表示50%）
             min_rate: 最小扣除比例
             max_rate: 最大扣除比例
-            max_gap: 用于计算的最大差距参考值
+            max_gap_ratio: 用于计算的最大差距比例参考值（如1.0表示100%）
 
         Returns:
             扣除比例
         """
-        if gap <= 0:
+        if gap_ratio <= 0:
             return min_rate
 
         # 计算比例：差距越大，扣除比例越高
-        ratio = min(gap / max_gap, 1.0)
+        ratio = min(gap_ratio / max_gap_ratio, 1.0)
         penalty_rate = min_rate + (max_rate - min_rate) * ratio
 
         return min(max(penalty_rate, min_rate), max_rate)
@@ -662,7 +671,7 @@ class WealthGapPenaltyService:
         self,
         group_id: str,
         user_id: str,
-        gap: float,
+        gap_ratio: float,
         penalty_rate: float,
         is_applying: bool,
     ) -> None:
@@ -671,7 +680,7 @@ class WealthGapPenaltyService:
         Args:
             group_id: 群ID
             user_id: 用户ID
-            gap: 差距
+            gap_ratio: 相对差距比例（如0.5表示50%）
             penalty_rate: 扣除比例
             is_applying: 是否为赋予debuff（False表示去除）
         """
@@ -685,7 +694,7 @@ class WealthGapPenaltyService:
             if is_applying:
                 message_text = (
                     f"⚠️ 厄运降临！\n"
-                    f"由于您当前财富榜第一，且与第二名差距过大（{gap:.1f}），"
+                    f"由于您当前财富榜第一，且与第二名差距过大（{gap_ratio*100:.1f}%），"
                     f"您已获得【厄运】。\n"
                     f"每小时将扣除您 {penalty_rate*100:.1f}% 的现金，"
                     f"扣除的金额将均分给财富榜前10名的其他群友。\n"
