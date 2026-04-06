@@ -206,11 +206,11 @@ class WealthGapPenaltyService:
             group_id: 群ID
         """
         logger.debug(f"[财富差距惩罚] _check_group_wealth_gap 群 {group_id} 开始执行")
-        
+
         # 获取群内所有用户
         group_users = await self._data_manager.get_group_users(group_id)
         logger.debug(f"[财富差距惩罚] 群 {group_id} 有 {len(group_users)} 个用户")
-        
+
         if len(group_users) < 2:
             logger.debug(f"[财富差距惩罚] 群 {group_id} 用户不足2个，跳过")
             return  # 至少需要2个用户才能比较
@@ -229,7 +229,7 @@ class WealthGapPenaltyService:
                 logger.error(f"[财富差距惩罚] 计算用户 {user_id} 身价失败: {e}")
 
         logger.debug(f"[财富差距惩罚] 成功计算 {len(user_wealth_list)} 个用户身价")
-        
+
         if len(user_wealth_list) < 2:
             logger.debug(f"[财富差距惩罚] 群 {group_id} 成功计算身价的用户不足2个，跳过")
             return
@@ -253,17 +253,38 @@ class WealthGapPenaltyService:
             f"第二 {second_user_id}({second_wealth}), 差距 {gap}, 阈值 {gap_threshold}"
         )
 
-        # 获取当前debuff状态
-        penalty_status = await self._data_manager.get_wealth_gap_penalty(
-            group_id, first_user_id
-        )
-        
-        logger.debug(
-            f"[财富差距惩罚] 用户 {first_user_id} debuff状态: {penalty_status}"
-        )
+        # 第一步：检查所有有debuff的用户，如果不是当前第一名或不符合条件，去除debuff
+        for user_id, user_wealth in user_wealth_list:
+            penalty_status = await self._data_manager.get_wealth_gap_penalty(
+                group_id, user_id
+            )
 
+            if penalty_status["has_debuff"]:
+                # 检查是否应该去除debuff
+                should_remove = False
+                remove_reason = ""
+
+                if user_id != first_user_id:
+                    # 不是第一名，去除debuff
+                    should_remove = True
+                    remove_reason = f"不再是第一名（当前第一: {first_user_id}）"
+                elif gap <= gap_threshold:
+                    # 是第一名但差距未超过阈值，去除debuff
+                    should_remove = True
+                    remove_reason = f"差距 {gap} <= 阈值 {gap_threshold}"
+
+                if should_remove:
+                    logger.info(
+                        f"[财富差距惩罚] 群 {group_id} 用户 {user_id} {remove_reason}，准备去除debuff"
+                    )
+                    await self._remove_debuff(group_id, user_id)
+
+        # 第二步：检查当前第一名是否应该赋予debuff
         if gap > gap_threshold:
-            # 差距超过阈值，赋予debuff（如果还没有）
+            penalty_status = await self._data_manager.get_wealth_gap_penalty(
+                group_id, first_user_id
+            )
+
             if not penalty_status["has_debuff"]:
                 logger.info(
                     f"[财富差距惩罚] 群 {group_id} 用户 {first_user_id} 差距 {gap} > 阈值 {gap_threshold}，"
@@ -273,18 +294,6 @@ class WealthGapPenaltyService:
             else:
                 logger.debug(
                     f"[财富差距惩罚] 群 {group_id} 用户 {first_user_id} 已有debuff，无需重复赋予"
-                )
-        else:
-            # 差距在阈值内，去除debuff
-            if penalty_status["has_debuff"]:
-                logger.info(
-                    f"[财富差距惩罚] 群 {group_id} 用户 {first_user_id} 差距 {gap} <= 阈值 {gap_threshold}，"
-                    f"准备去除debuff"
-                )
-                await self._remove_debuff(group_id, first_user_id)
-            else:
-                logger.debug(
-                    f"[财富差距惩罚] 群 {group_id} 用户 {first_user_id} 差距 {gap} <= 阈值，无debuff"
                 )
 
     async def _apply_penalty_to_group(self, group_id: str) -> None:
