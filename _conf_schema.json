@@ -329,6 +329,12 @@
         "default": 30,
         "hint": "汇率历史记录保留的天数，超过此天数的记录将被自动清理"
       },
+      "min_currency_for_query": {
+        "type": "float",
+        "description": "汇率查询最低持有量",
+        "default": 1.0,
+        "hint": "用户需要持有至少多少群主货币才能查询汇率，默认1个。非交易时段不受此限制。"
+      },
       "trading_hours": {
         "type": "template_list",
         "description": "交易时段配置",

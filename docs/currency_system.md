@@ -707,6 +707,21 @@ trend_term = trend_state × trend_strength × current_rate × dt
 | `trend_min_strength` | 0.01 | 最小趋势强度（每天1%） |
 | `trend_max_strength` | 0.05 | 最大趋势强度（每天5%） |
 | `trading_hours` | [] | 交易时段配置（template_list类型） |
+| `min_currency_for_query` | 1.0 | 汇率查询最低持有量（交易时段内） |
+
+### 汇率查询限制
+
+在**交易时段内**查询汇率需要满足群主货币持有量要求：
+
+- **最低持有量**: 用户需要持有至少 `min_currency_for_query`（默认1.0）个群主货币
+- **非交易时段**: 不受此限制，所有用户都可以免费查询汇率
+- **提示信息**: 持有量不足时会提示用户需要先购买群主货币
+
+**示例提示**:
+```
+需要先购买至少 1 个群主货币才能查询汇率。
+当前持有：0.5 个
+```
 
 ### 数据库表
 

@@ -1008,6 +1008,24 @@ class ContractSystem(Star):
         else:
             wealth_level = "免费查询"
 
+        # 检查群主货币持有量（仅在交易时段内检查，非交易时段免费查询不受限制）
+        if is_trading:
+            stock_config = self.config.get("stock_market", {})
+            min_currency = stock_config.get("min_currency_for_query", 1.0)
+            
+            # 获取用户持有的群主货币数量
+            currency_balance = await self.owner_currency_manager.get_balance(
+                group_id, user_id
+            )
+            
+            if currency_balance < min_currency:
+                await send_text_reply(
+                    event,
+                    f"需要先购买至少 {min_currency} 个群主货币才能查询汇率。\n"
+                    f"当前持有：{currency_balance:.3f} 个",
+                )
+                return
+
         # 获取群主信息
         owner_id = None
         if event.get_platform_name() == "aiocqhttp":
@@ -1925,12 +1943,9 @@ class ContractSystem(Star):
 
         # 如果需要回复（首次处理该用户）
         if result.get("should_reply", False):
-            # 已签到，发送引用提示
+            # 已签到，静默处理（不再发送提示）
             if result.get("already_signed", False):
-                from astrbot.api.message_components import Reply, Plain
-                reply_seg = Reply(id=event.message_obj.message_id)
-                text_seg = Plain("今日已自动签到，无需重复操作。")
-                await event.send(event.chain_result([reply_seg, text_seg]))
+                pass  # 已签到用户不发送任何消息
             # 未签到但签到失败
             elif not result.get("success", False):
                 from astrbot.api.message_components import Reply, Plain
