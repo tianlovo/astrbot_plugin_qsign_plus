@@ -652,20 +652,21 @@ class WealthGapPenaltyService:
 
                     if isinstance(platform, AiocqhttpPlatformAdapter):
                         client = platform.bot
-                        resp = await client.api.call_action(
-                            "get_group_member_info",
+                        # 使用 get_group_member_info 方法获取群成员信息
+                        resp = await client.get_group_member_info(
                             group_id=int(group_id),
                             user_id=int(user_id),
                             no_cache=True,
                         )
-                        return resp.get("card") or resp.get("nickname", f"用户{user_id[-4:]}")
+                        # 优先返回群名片(card)，如果没有则返回QQ昵称(nickname)
+                        return resp.get("card") or resp.get("nickname") or f"用户{user_id[-4:]}"
                 except Exception as e:
-                    logger.debug(f"[财富差距惩罚] 获取用户 {user_id} 昵称失败: {e}")
+                    logger.debug(f"[财富差距惩罚] 获取用户 {user_id} 群昵称失败: {e}")
 
             return f"用户{user_id[-4:]}"
         except Exception as e:
             logger.debug(f"[财富差距惩罚] 获取用户昵称失败: {e}")
-            return f"用户{user_id[-4:]}"
+            return f"用户{user_id[-4:]}"}
 
     async def _send_debuff_notification(
         self,
