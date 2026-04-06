@@ -1707,6 +1707,12 @@ class ContractSystem(Star):
 
                 info_text += f"📈 明日预计: {income_info['total']:.1f} {currency}"
 
+            # 查询debuff状态
+            penalty_status = await self.data_manager.get_wealth_gap_penalty(group_id, user_id)
+            if penalty_status.get("has_debuff", False):
+                penalty_rate = penalty_status.get("current_penalty_rate", 0.0)
+                info_text += f"\n\n⚠️ 【厄运debuff】每小时扣除 {penalty_rate*100:.1f}% 现金"
+
             await send_text_reply(event, info_text)
             return
 
@@ -1756,6 +1762,12 @@ class ContractSystem(Star):
             # Add consecutive sign-in info
             if user_data.get("consecutive", 0) > 0:
                 info_text += f"📅 连续签到: {user_data['consecutive']} 天\n"
+
+            # 查询debuff状态
+            penalty_status = await self.data_manager.get_wealth_gap_penalty(group_id, user_id)
+            if penalty_status.get("has_debuff", False):
+                penalty_rate = penalty_status.get("current_penalty_rate", 0.0)
+                info_text += f"\n⚠️ 【厄运debuff】每小时扣除 {penalty_rate*100:.1f}% 现金\n"
 
             info_text += "\n正在生成图片卡片，请稍候..."
 
