@@ -290,7 +290,7 @@ class WealthGapPenaltyService:
                     f"[财富差距惩罚] 群 {group_id} 用户 {first_user_id} 差距 {gap} > 阈值 {gap_threshold}，"
                     f"准备赋予debuff"
                 )
-                await self._apply_debuff(group_id, first_user_id, gap)
+                await self._apply_debuff(group_id, first_user_id, gap, first_wealth)
             else:
                 logger.debug(
                     f"[财富差距惩罚] 群 {group_id} 用户 {first_user_id} 已有debuff，无需重复赋予"
@@ -357,13 +357,14 @@ class WealthGapPenaltyService:
                     group_id, first_user_id, first_wealth, gap
                 )
 
-    async def _apply_debuff(self, group_id: str, user_id: str, gap: float) -> None:
+    async def _apply_debuff(self, group_id: str, user_id: str, gap: float, first_wealth: float) -> None:
         """赋予厄运debuff
 
         Args:
             group_id: 群ID
             user_id: 用户ID
             gap: 当前差距
+            first_wealth: 第一名身价
         """
         penalty_config = self._config.get("wealth_gap_penalty", {})
         min_rate = penalty_config.get("min_penalty_rate", 0.01)
@@ -379,10 +380,12 @@ class WealthGapPenaltyService:
             group_id, user_id, True, penalty_rate, now
         )
 
-        # 获取用户数据并执行首次扣除
+        # 计算扣除金额（基于身价，可扣到负数）
+        penalty_amount = first_wealth * penalty_rate
+
+        # 从现金中扣除（允许扣到负数）
         user_data = await self._data_manager.get_user_data(group_id, user_id)
         current_coins = user_data.get("coins", 0)
-        penalty_amount = current_coins * penalty_rate
         new_coins = current_coins - penalty_amount
         user_data["coins"] = new_coins
         await self._data_manager.save_user_data(group_id, user_id, user_data)
@@ -398,7 +401,7 @@ class WealthGapPenaltyService:
         logger.info(
             f"[财富差距惩罚] 群 {group_id} 用户 {user_id} 获得厄运，"
             f"差距: {gap:.1f}, 扣除比例: {penalty_rate*100:.1f}%, "
-            f"首次扣除: {penalty_amount:.1f}, 剩余: {new_coins:.1f}"
+            f"基于身价 {first_wealth:.1f} 首次扣除: {penalty_amount:.1f}, 现金剩余: {new_coins:.1f}"
         )
 
     async def _remove_debuff(self, group_id: str, user_id: str) -> None:
@@ -446,14 +449,12 @@ class WealthGapPenaltyService:
         max_gap = penalty_config.get("max_gap_for_calculation", 10000)
         penalty_rate = self._calculate_penalty_rate(gap, min_rate, max_rate, max_gap)
 
-        # 获取用户数据
+        # 计算扣除金额（基于身价，可扣到负数）
+        penalty_amount = current_wealth * penalty_rate
+
+        # 从现金中扣除（允许扣到负数）
         user_data = await self._data_manager.get_user_data(group_id, user_id)
         current_coins = user_data.get("coins", 0)
-
-        # 计算扣除金额（基于现金）
-        penalty_amount = current_coins * penalty_rate
-
-        # 扣除现金（可扣到负数）
         new_coins = current_coins - penalty_amount
         user_data["coins"] = new_coins
         await self._data_manager.save_user_data(group_id, user_id, user_data)
@@ -465,8 +466,8 @@ class WealthGapPenaltyService:
         )
 
         logger.info(
-            f"[财富差距惩罚] 群 {group_id} 用户 {user_id} 扣除 {penalty_amount:.1f} "
-            f"现金（比例 {penalty_rate*100:.1f}%），剩余 {new_coins:.1f}"
+            f"[财富差距惩罚] 群 {group_id} 用户 {user_id} 基于身价 {current_wealth:.1f} "
+            f"扣除 {penalty_amount:.1f}（比例 {penalty_rate*100:.1f}%），现金剩余 {new_coins:.1f}"
         )
 
         # 将扣除的金额分配给财富榜前10名的其他群友
