@@ -225,6 +225,22 @@ class QsignDatabase:
                 )
             """)
 
+            # 创建财富榜差距惩罚表
+            await self._conn.execute("""
+                CREATE TABLE IF NOT EXISTS wealth_gap_penalty_v2 (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    group_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    has_debuff BOOLEAN DEFAULT 0,
+                    current_penalty_rate REAL DEFAULT 0.0,
+                    last_penalty_time INTEGER DEFAULT 0,
+                    debuff_start_time INTEGER DEFAULT 0,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    UNIQUE(group_id, user_id)
+                )
+            """)
+
             # 创建索引
             await self._conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_user_wealth_group
@@ -265,6 +281,10 @@ class QsignDatabase:
             await self._conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_stock_limits_group_user_date
                 ON stock_market_limits(group_id, user_id, limit_date)
+            """)
+            await self._conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_wealth_gap_penalty_v2_group_user
+                ON wealth_gap_penalty_v2(group_id, user_id)
             """)
 
             await self._conn.commit()
@@ -1560,4 +1580,134 @@ class QsignDatabase:
             return True
         except Exception as e:
             logger.error(f"[{self.plugin_name}] 增加股市限制计数失败: {e}")
+            return False
+
+    async def get_wealth_gap_penalty(self, group_id: str, user_id: str) -> dict[str, Any]:
+        """获取财富榜差距惩罚状态
+
+        Args:
+            group_id: 群ID
+            user_id: 用户ID
+
+        Returns:
+            惩罚状态字典，如果不存在则返回默认值
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            async with self._conn.execute(
+                """
+                SELECT has_debuff, current_penalty_rate, last_penalty_time, debuff_start_time
+                FROM wealth_gap_penalty_v2
+                WHERE group_id = ? AND user_id = ?
+                """,
+                (str(group_id), str(user_id)),
+            ) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    return {
+                        "has_debuff": bool(row[0]),
+                        "current_penalty_rate": row[1],
+                        "last_penalty_time": row[2],
+                        "debuff_start_time": row[3],
+                    }
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 获取财富榜差距惩罚状态失败: {e}")
+
+        # 返回默认值
+        return {
+            "has_debuff": False,
+            "current_penalty_rate": 0.0,
+            "last_penalty_time": 0,
+            "debuff_start_time": 0,
+        }
+
+    async def set_wealth_gap_penalty(
+        self,
+        group_id: str,
+        user_id: str,
+        has_debuff: bool,
+        current_penalty_rate: float = 0.0,
+        debuff_start_time: int = 0,
+    ) -> bool:
+        """设置财富榜差距惩罚状态
+
+        Args:
+            group_id: 群ID
+            user_id: 用户ID
+            has_debuff: 是否有debuff
+            current_penalty_rate: 当前扣除比例
+            debuff_start_time: debuff开始时间
+
+        Returns:
+            是否成功
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            now = int(time.time())
+            await self._conn.execute(
+                """
+                INSERT INTO wealth_gap_penalty_v2
+                (group_id, user_id, has_debuff, current_penalty_rate, last_penalty_time, debuff_start_time, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(group_id, user_id) DO UPDATE SET
+                has_debuff = ?,
+                current_penalty_rate = ?,
+                debuff_start_time = ?,
+                updated_at = ?
+                """,
+                (
+                    str(group_id),
+                    str(user_id),
+                    1 if has_debuff else 0,
+                    current_penalty_rate,
+                    0,
+                    debuff_start_time,
+                    now,
+                    now,
+                    1 if has_debuff else 0,
+                    current_penalty_rate,
+                    debuff_start_time,
+                    now,
+                ),
+            )
+            await self._conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 设置财富榜差距惩罚状态失败: {e}")
+            return False
+
+    async def update_penalty_last_time(
+        self, group_id: str, user_id: str, last_penalty_time: int
+    ) -> bool:
+        """更新上次惩罚时间
+
+        Args:
+            group_id: 群ID
+            user_id: 用户ID
+            last_penalty_time: 上次惩罚时间戳
+
+        Returns:
+            是否成功
+        """
+        if not self._conn:
+            raise RuntimeError("数据库未初始化")
+
+        try:
+            now = int(time.time())
+            await self._conn.execute(
+                """
+                UPDATE wealth_gap_penalty_v2
+                SET last_penalty_time = ?, updated_at = ?
+                WHERE group_id = ? AND user_id = ?
+                """,
+                (last_penalty_time, now, str(group_id), str(user_id)),
+            )
+            await self._conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"[{self.plugin_name}] 更新惩罚时间失败: {e}")
             return False

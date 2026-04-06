@@ -22,6 +22,7 @@ from .services.card_renderer import CardRenderer
 from .services.exchange_rate_cleanup_service import ExchangeRateCleanupService
 from .services.exchange_rate_service import ExchangeRateService
 from .services.image_cache import ImageCacheService
+from .services.wealth_gap_penalty_service import WealthGapPenaltyService
 from .utils.helpers import (
     get_first_at_user,
     get_plain_text_from_message,
@@ -124,6 +125,15 @@ class ContractSystem(Star):
             config=config,
         )
         asyncio.create_task(self.exchange_rate_cleanup_service.start())
+
+        # 初始化并启动财富榜差距惩罚服务
+        self.wealth_gap_penalty_service = WealthGapPenaltyService(
+            data_manager=self.data_manager,
+            wealth_calculator=self.wealth_calculator,
+            config=config,
+            context=context,
+        )
+        asyncio.create_task(self.wealth_gap_penalty_service.start())
 
     async def _sync_redeem_codes(self):
         """同步兑换码配置到数据库"""
@@ -2133,6 +2143,14 @@ class ContractSystem(Star):
         # 停止汇率更新后台服务
         if hasattr(self, "exchange_rate_service"):
             await self.exchange_rate_service.stop()
+
+        # 停止汇率历史清理服务
+        if hasattr(self, "exchange_rate_cleanup_service"):
+            await self.exchange_rate_cleanup_service.stop()
+
+        # 停止财富榜差距惩罚服务
+        if hasattr(self, "wealth_gap_penalty_service"):
+            await self.wealth_gap_penalty_service.stop()
 
         await self.image_cache.close()
         await self.data_manager.close()

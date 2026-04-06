@@ -457,5 +457,54 @@
         }
       }
     }
+  },
+  "wealth_gap_penalty": {
+    "description": "财富榜差距惩罚配置",
+    "type": "object",
+    "hint": "配置财富榜第一名与第二名差距过大时的惩罚机制",
+    "items": {
+      "enabled": {
+        "type": "bool",
+        "description": "启用差距惩罚",
+        "default": true,
+        "hint": "是否启用财富榜差距惩罚机制。关闭后即使差距过大也不会触发惩罚。"
+      },
+      "gap_threshold": {
+        "type": "float",
+        "description": "差距阈值",
+        "default": 2000.0,
+        "hint": "第一名与第二名的差距超过此值时触发惩罚。单位：货币数量。"
+      },
+      "min_penalty_rate": {
+        "type": "float",
+        "description": "最小扣除比例",
+        "default": 0.01,
+        "hint": "最小扣除比例，默认1%。差距刚好超过阈值时的扣除比例。"
+      },
+      "max_penalty_rate": {
+        "type": "float",
+        "description": "最大扣除比例",
+        "default": 0.10,
+        "hint": "最大扣除比例，默认10%。差距达到最大值时的扣除比例。"
+      },
+      "max_gap_for_calculation": {
+        "type": "float",
+        "description": "最大差距参考值",
+        "default": 10000.0,
+        "hint": "用于计算扣除比例的最大差距参考值。差距达到此值时按最大比例扣除。"
+      },
+      "check_interval_minutes": {
+        "type": "int",
+        "description": "检测间隔（分钟）",
+        "default": 1,
+        "hint": "检测财富榜差距的时间间隔，默认每分钟检测一次。"
+      },
+      "penalty_interval_minutes": {
+        "type": "int",
+        "description": "扣除间隔（分钟）",
+        "default": 60,
+        "hint": "扣除现金的时间间隔，默认每小时扣除一次。"
+      }
+    }
   }
 }

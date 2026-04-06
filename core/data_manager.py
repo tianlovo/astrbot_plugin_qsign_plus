@@ -486,6 +486,57 @@ class DataManager:
             group_id, user_id, new_balance
         )
 
+    async def get_wealth_gap_penalty(self, group_id: str, user_id: str) -> dict[str, Any]:
+        """获取财富榜差距惩罚状态
+
+        Args:
+            group_id: 群ID
+            user_id: 用户ID
+
+        Returns:
+            惩罚状态字典
+        """
+        return await self.db.get_wealth_gap_penalty(group_id, user_id)
+
+    async def set_wealth_gap_penalty(
+        self,
+        group_id: str,
+        user_id: str,
+        has_debuff: bool,
+        current_penalty_rate: float = 0.0,
+        debuff_start_time: int = 0,
+    ) -> bool:
+        """设置财富榜差距惩罚状态
+
+        Args:
+            group_id: 群ID
+            user_id: 用户ID
+            has_debuff: 是否有debuff
+            current_penalty_rate: 当前扣除比例
+            debuff_start_time: debuff开始时间
+
+        Returns:
+            是否成功
+        """
+        return await self.db.set_wealth_gap_penalty(
+            group_id, user_id, has_debuff, current_penalty_rate, debuff_start_time
+        )
+
+    async def update_penalty_last_time(
+        self, group_id: str, user_id: str, last_penalty_time: int
+    ) -> bool:
+        """更新上次惩罚时间
+
+        Args:
+            group_id: 群ID
+            user_id: 用户ID
+            last_penalty_time: 上次惩罚时间戳
+
+        Returns:
+            是否成功
+        """
+        return await self.db.update_penalty_last_time(group_id, user_id, last_penalty_time)
+
     async def close(self):
         """关闭数据库连接"""
         await self.db.close()
