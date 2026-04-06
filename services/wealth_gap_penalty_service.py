@@ -119,8 +119,11 @@ class WealthGapPenaltyService:
         """运行检测循环（检测间隔）"""
         penalty_config = self._config.get("wealth_gap_penalty", {})
         check_interval = penalty_config.get("check_interval_minutes", 1) * 60  # 转换为秒
+        
+        logger.info(f"[财富差距惩罚] 检测循环启动，间隔: {check_interval}秒")
 
         while not self._stop_event.is_set():
+            logger.debug("[财富差距惩罚] 开始新一轮检测...")
             try:
                 await self._check_all_groups()
             except Exception as e:
@@ -153,19 +156,26 @@ class WealthGapPenaltyService:
 
     async def _check_all_groups(self) -> None:
         """检查所有启用群的财富榜差距（检测间隔）"""
+        logger.debug("[财富差距惩罚] _check_all_groups 被调用")
+        
         # 检查数据库是否已初始化
         if not self._data_manager.is_db_initialized():
+            logger.debug("[财富差距惩罚] 数据库未初始化，跳过检测")
             return
 
         penalty_config = self._config.get("wealth_gap_penalty", {})
         if not penalty_config.get("enabled", True):
+            logger.debug("[财富差距惩罚] 功能已禁用，跳过检测")
             return
 
         basic_config = self._config.get("basic", {})
         enabled_groups = basic_config.get("enabled_groups", [])
+        
+        logger.debug(f"[财富差距惩罚] 检测到 {len(enabled_groups)} 个启用群: {enabled_groups}")
 
         for group_id in enabled_groups:
             try:
+                logger.debug(f"[财富差距惩罚] 开始检查群 {group_id}")
                 await self._check_group_wealth_gap(group_id)
             except Exception as e:
                 logger.error(f"[财富差距惩罚] 检查群 {group_id} 时出错: {e}")
@@ -195,9 +205,14 @@ class WealthGapPenaltyService:
         Args:
             group_id: 群ID
         """
+        logger.debug(f"[财富差距惩罚] _check_group_wealth_gap 群 {group_id} 开始执行")
+        
         # 获取群内所有用户
         group_users = await self._data_manager.get_group_users(group_id)
+        logger.debug(f"[财富差距惩罚] 群 {group_id} 有 {len(group_users)} 个用户")
+        
         if len(group_users) < 2:
+            logger.debug(f"[财富差距惩罚] 群 {group_id} 用户不足2个，跳过")
             return  # 至少需要2个用户才能比较
 
         # 计算每个用户的身价
@@ -209,10 +224,14 @@ class WealthGapPenaltyService:
                     group_id, user_data, user_id
                 )
                 user_wealth_list.append((user_id, total_wealth))
+                logger.debug(f"[财富差距惩罚] 用户 {user_id} 身价: {total_wealth}")
             except Exception as e:
                 logger.error(f"[财富差距惩罚] 计算用户 {user_id} 身价失败: {e}")
 
+        logger.debug(f"[财富差距惩罚] 成功计算 {len(user_wealth_list)} 个用户身价")
+        
         if len(user_wealth_list) < 2:
+            logger.debug(f"[财富差距惩罚] 群 {group_id} 成功计算身价的用户不足2个，跳过")
             return
 
         # 按身价排序
@@ -229,19 +248,44 @@ class WealthGapPenaltyService:
         penalty_config = self._config.get("wealth_gap_penalty", {})
         gap_threshold = penalty_config.get("gap_threshold", 2000)
 
+        logger.debug(
+            f"[财富差距惩罚] 群 {group_id} 排名: 第一 {first_user_id}({first_wealth}), "
+            f"第二 {second_user_id}({second_wealth}), 差距 {gap}, 阈值 {gap_threshold}"
+        )
+
         # 获取当前debuff状态
         penalty_status = await self._data_manager.get_wealth_gap_penalty(
             group_id, first_user_id
+        )
+        
+        logger.debug(
+            f"[财富差距惩罚] 用户 {first_user_id} debuff状态: {penalty_status}"
         )
 
         if gap > gap_threshold:
             # 差距超过阈值，赋予debuff（如果还没有）
             if not penalty_status["has_debuff"]:
+                logger.info(
+                    f"[财富差距惩罚] 群 {group_id} 用户 {first_user_id} 差距 {gap} > 阈值 {gap_threshold}，"
+                    f"准备赋予debuff"
+                )
                 await self._apply_debuff(group_id, first_user_id, gap)
+            else:
+                logger.debug(
+                    f"[财富差距惩罚] 群 {group_id} 用户 {first_user_id} 已有debuff，无需重复赋予"
+                )
         else:
             # 差距在阈值内，去除debuff
             if penalty_status["has_debuff"]:
+                logger.info(
+                    f"[财富差距惩罚] 群 {group_id} 用户 {first_user_id} 差距 {gap} <= 阈值 {gap_threshold}，"
+                    f"准备去除debuff"
+                )
                 await self._remove_debuff(group_id, first_user_id)
+            else:
+                logger.debug(
+                    f"[财富差距惩罚] 群 {group_id} 用户 {first_user_id} 差距 {gap} <= 阈值，无debuff"
+                )
 
     async def _apply_penalty_to_group(self, group_id: str) -> None:
         """对指定群的有debuff用户执行扣除
