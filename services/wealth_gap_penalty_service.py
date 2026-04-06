@@ -587,8 +587,11 @@ class WealthGapPenaltyService:
             from astrbot.api.message_components import Plain
             from astrbot.core.message.message_event_result import MessageChain
 
+            # 获取被扣除用户的昵称
+            user_nickname = await self._get_user_nickname(group_id, penalized_user_id)
+
             message_text = (
-                f"【厄运】从群友 {penalized_user_id} 扣除的 {penalty_amount:.1f} 系统货币 "
+                f"【厄运】从群友 {user_nickname} 扣除的 {penalty_amount:.1f} 系统货币 "
                 f"已均分给财富榜前10名的 {recipient_count} 位群友"
             )
 
@@ -606,6 +609,54 @@ class WealthGapPenaltyService:
 
         except Exception as e:
             logger.error(f"[财富差距惩罚] 发送分配通知失败: {e}")
+
+    async def _get_user_nickname(self, group_id: str, user_id: str) -> str:
+        """获取用户群昵称
+
+        Args:
+            group_id: 群ID
+            user_id: 用户ID
+
+        Returns:
+            用户昵称，如果获取失败则返回用户ID后4位
+        """
+        try:
+            # 从 umo 获取平台信息
+            umo = self._get_group_umo(group_id)
+            if not umo:
+                return f"用户{user_id[-4:]}"
+
+            # 解析 umo 获取平台ID
+            platform_id = umo.split(":")[0]
+
+            # 获取平台适配器
+            platform = self._context.get_platform_inst(platform_id)
+            if not platform:
+                return f"用户{user_id[-4:]}"
+
+            # 调用API获取群成员信息
+            if platform_id == "aiocqhttp":
+                try:
+                    from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_platform_adapter import (
+                        AiocqhttpPlatformAdapter,
+                    )
+
+                    if isinstance(platform, AiocqhttpPlatformAdapter):
+                        client = platform.bot
+                        resp = await client.api.call_action(
+                            "get_group_member_info",
+                            group_id=int(group_id),
+                            user_id=int(user_id),
+                            no_cache=True,
+                        )
+                        return resp.get("card") or resp.get("nickname", f"用户{user_id[-4:]}")
+                except Exception as e:
+                    logger.debug(f"[财富差距惩罚] 获取用户 {user_id} 昵称失败: {e}")
+
+            return f"用户{user_id[-4:]}"
+        except Exception as e:
+            logger.debug(f"[财富差距惩罚] 获取用户昵称失败: {e}")
+            return f"用户{user_id[-4:]}"
 
     async def _send_debuff_notification(
         self,
