@@ -323,16 +323,30 @@ class WealthGapPenaltyService:
         # 计算差距
         gap = first_wealth - second_wealth
 
+        # 获取配置
+        penalty_config = self._config.get("wealth_gap_penalty", {})
+        gap_threshold = penalty_config.get("gap_threshold", 2000)
+
         # 获取当前debuff状态
         penalty_status = await self._data_manager.get_wealth_gap_penalty(
             group_id, first_user_id
         )
 
-        # 只有有debuff的用户才执行扣除
+        # 只有有debuff的用户才处理
         if penalty_status["has_debuff"]:
-            await self._apply_penalty_deduction(
-                group_id, first_user_id, first_wealth, gap
-            )
+            # 检查差距是否已缩小到阈值以下
+            if gap <= gap_threshold:
+                # 差距已缩小，去除debuff
+                logger.info(
+                    f"[财富差距惩罚] 群 {group_id} 扣除后用户 {first_user_id} 差距 {gap} <= 阈值 {gap_threshold}，"
+                    f"准备去除debuff"
+                )
+                await self._remove_debuff(group_id, first_user_id)
+            else:
+                # 差距仍超过阈值，执行扣除
+                await self._apply_penalty_deduction(
+                    group_id, first_user_id, first_wealth, gap
+                )
 
     async def _apply_debuff(self, group_id: str, user_id: str, gap: float) -> None:
         """赋予厄运debuff
