@@ -562,19 +562,20 @@ class WealthGapPenaltyService:
 
             # 发送分配通知
             await self._send_redistribution_notification(
-                group_id, penalty_amount, recipient_count
+                group_id, excluded_user_id, penalty_amount, recipient_count
             )
 
         except Exception as e:
             logger.error(f"[财富差距惩罚] 分配扣除金额失败: {e}")
 
     async def _send_redistribution_notification(
-        self, group_id: str, penalty_amount: float, recipient_count: int
+        self, group_id: str, penalized_user_id: str, penalty_amount: float, recipient_count: int
     ) -> None:
         """发送分配通知
 
         Args:
             group_id: 群ID
+            penalized_user_id: 被扣除的用户ID
             penalty_amount: 扣除的总金额
             recipient_count: 分配人数
         """
@@ -586,7 +587,7 @@ class WealthGapPenaltyService:
             from astrbot.core.message.message_event_result import MessageChain
 
             message_text = (
-                f"【厄运】扣除的 {penalty_amount:.1f} 系统货币 "
+                f"【厄运】从群友 {penalized_user_id} 扣除的 {penalty_amount:.1f} 系统货币 "
                 f"已均分给财富榜前10名的 {recipient_count} 位群友"
             )
 
