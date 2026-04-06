@@ -469,6 +469,10 @@ class WealthGapPenaltyService:
             f"现金（比例 {penalty_rate*100:.1f}%），剩余 {new_coins:.1f}"
         )
 
+        # 将扣除的金额分配给财富榜前10名的其他群友
+        if penalty_amount > 0:
+            await self._redistribute_penalty_amount(group_id, user_id, penalty_amount)
+
     def _calculate_penalty_rate(
         self, gap: float, min_rate: float, max_rate: float, max_gap: float
     ) -> float:
@@ -491,6 +495,115 @@ class WealthGapPenaltyService:
         penalty_rate = min_rate + (max_rate - min_rate) * ratio
 
         return min(max(penalty_rate, min_rate), max_rate)
+
+    async def _redistribute_penalty_amount(
+        self, group_id: str, excluded_user_id: str, penalty_amount: float
+    ) -> None:
+        """将扣除的金额分配给财富榜前10名的其他群友
+
+        Args:
+            group_id: 群ID
+            excluded_user_id: 被扣除的用户ID（不参与分配）
+            penalty_amount: 扣除的总金额
+        """
+        try:
+            # 获取群内所有用户
+            group_users = await self._data_manager.get_group_users(group_id)
+            if len(group_users) < 2:
+                return
+
+            # 计算每个用户的身价
+            user_wealth_list = []
+            for user_id in group_users:
+                try:
+                    user_data = await self._data_manager.get_user_data(group_id, user_id)
+                    total_wealth = await self._wealth_calculator.calculate_wealth_value(
+                        group_id, user_data, user_id
+                    )
+                    user_wealth_list.append((user_id, total_wealth))
+                except Exception as e:
+                    logger.error(f"[财富差距惩罚] 计算用户 {user_id} 身价失败: {e}")
+
+            if len(user_wealth_list) < 2:
+                return
+
+            # 按身价排序
+            user_wealth_list.sort(key=lambda x: x[1], reverse=True)
+
+            # 获取前10名（排除被扣除的用户）
+            top_10_users = [
+                (uid, wealth)
+                for uid, wealth in user_wealth_list[:10]
+                if uid != excluded_user_id
+            ]
+
+            if not top_10_users:
+                logger.debug(f"[财富差距惩罚] 群 {group_id} 前10名没有其他用户，跳过分配")
+                return
+
+            # 计算每人应得金额
+            recipient_count = len(top_10_users)
+            amount_per_user = penalty_amount / recipient_count
+
+            # 给每个前10名用户增加系统货币
+            for recipient_id, _ in top_10_users:
+                try:
+                    user_data = await self._data_manager.get_user_data(group_id, recipient_id)
+                    current_coins = user_data.get("coins", 0)
+                    user_data["coins"] = current_coins + amount_per_user
+                    await self._data_manager.save_user_data(group_id, recipient_id, user_data)
+                except Exception as e:
+                    logger.error(f"[财富差距惩罚] 给用户 {recipient_id} 分配金额失败: {e}")
+
+            logger.info(
+                f"[财富差距惩罚] 群 {group_id} 扣除金额 {penalty_amount:.1f} "
+                f"已均分给 {recipient_count} 个前10名用户，每人 {amount_per_user:.1f}"
+            )
+
+            # 发送分配通知
+            await self._send_redistribution_notification(
+                group_id, penalty_amount, recipient_count
+            )
+
+        except Exception as e:
+            logger.error(f"[财富差距惩罚] 分配扣除金额失败: {e}")
+
+    async def _send_redistribution_notification(
+        self, group_id: str, penalty_amount: float, recipient_count: int
+    ) -> None:
+        """发送分配通知
+
+        Args:
+            group_id: 群ID
+            penalty_amount: 扣除的总金额
+            recipient_count: 分配人数
+        """
+        if not self._context:
+            return
+
+        try:
+            from astrbot.api.message_components import Plain
+            from astrbot.core.message.message_event_result import MessageChain
+
+            message_text = (
+                f"【厄运】扣除的 {penalty_amount:.1f} 系统货币 "
+                f"已均分给财富榜前10名的 {recipient_count} 位群友"
+            )
+
+            # 构建消息链（不AT任何人）
+            chain = MessageChain([Plain(message_text)])
+
+            # 获取群的 unified_msg_origin
+            umo = self._get_group_umo(group_id)
+            if not umo:
+                logger.warning(f"[财富差距惩罚] 群 {group_id} 的 umo 未找到，无法发送分配通知")
+                return
+
+            # 发送消息
+            await self._context.send_message(umo, chain)
+
+        except Exception as e:
+            logger.error(f"[财富差距惩罚] 发送分配通知失败: {e}")
 
     async def _send_debuff_notification(
         self,
