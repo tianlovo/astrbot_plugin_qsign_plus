@@ -1944,12 +1944,19 @@ class ContractSystem(Star):
         if not self.data_manager.is_db_initialized():
             return
 
+        group_id = str(event.message_obj.group_id)
+
+        # 更新财富差距惩罚服务的群 umo 缓存
+        if hasattr(self, "wealth_gap_penalty_service"):
+            self.wealth_gap_penalty_service.update_group_umo(
+                group_id, event.unified_msg_origin
+            )
+
         # 检查自动签到是否启用
         auto_checkin_config = self.config.get("auto_checkin", {})
         if not auto_checkin_config.get("enabled", False):
             return
 
-        group_id = str(event.message_obj.group_id)
         basic_config = self.config.get("basic", {})
         if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
             return

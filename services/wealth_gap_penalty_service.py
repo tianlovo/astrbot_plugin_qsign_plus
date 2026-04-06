@@ -51,6 +51,28 @@ class WealthGapPenaltyService:
 
         self._task: asyncio.Task | None = None
         self._stop_event = asyncio.Event()
+        # 存储群组的 unified_msg_origin，格式: {group_id: umo}
+        self._group_umo_cache: dict[str, str] = {}
+
+    def update_group_umo(self, group_id: str, umo: str) -> None:
+        """更新群的 unified_msg_origin
+
+        Args:
+            group_id: 群ID
+            umo: unified_msg_origin 字符串
+        """
+        self._group_umo_cache[group_id] = umo
+
+    def _get_group_umo(self, group_id: str) -> str | None:
+        """获取群的 unified_msg_origin
+
+        Args:
+            group_id: 群ID
+
+        Returns:
+            unified_msg_origin 字符串，如果不存在则返回 None
+        """
+        return self._group_umo_cache.get(group_id)
 
     async def start(self) -> None:
         """启动财富榜差距惩罚服务"""
@@ -324,7 +346,6 @@ class WealthGapPenaltyService:
 
         try:
             from astrbot.api.message_components import At, Plain
-            from astrbot.core.platform.message_type import MessageType
 
             if is_applying:
                 message_text = (
@@ -343,12 +364,14 @@ class WealthGapPenaltyService:
             # 构建消息链
             chain = [At(qq=user_id), Plain(message_text)]
 
-            # 构建 session 字符串: platform:message_type:session_id
-            # 使用 aiocqhttp 平台和 GroupMessage 类型
-            session_str = f"aiocqhttp:{MessageType.GROUP_MESSAGE.value}:{group_id}"
+            # 获取群的 unified_msg_origin
+            umo = self._get_group_umo(group_id)
+            if not umo:
+                logger.warning(f"[财富差距惩罚] 群 {group_id} 的 umo 未找到，无法发送通知")
+                return
 
             # 发送消息
-            await self._context.send_message(session_str, chain)
+            await self._context.send_message(umo, chain)
 
         except Exception as e:
             logger.error(f"[财富差距惩罚] 发送通知失败: {e}")
