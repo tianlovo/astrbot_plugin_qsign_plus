@@ -461,7 +461,7 @@
   "wealth_gap_penalty": {
     "description": "财富榜差距惩罚配置",
     "type": "object",
-    "hint": "配置财富榜第一名与第二名差距过大时的惩罚机制",
+    "hint": "配置财富榜第一名与第二名差距过大时的惩罚机制。相对差距 = (第一名身价 - 第二名身价) / 第二名身价",
     "items": {
       "enabled": {
         "type": "bool",
@@ -471,9 +471,9 @@
       },
       "gap_threshold": {
         "type": "float",
-        "description": "差距阈值",
-        "default": 2000.0,
-        "hint": "第一名与第二名的差距超过此值时触发惩罚。单位：货币数量。"
+        "description": "相对差距阈值",
+        "default": 0.5,
+        "hint": "第一名与第二名的相对差距超过此值时触发惩罚。默认0.5表示50%。计算公式：(第一-第二)/第二"
       },
       "min_penalty_rate": {
         "type": "float",
@@ -485,13 +485,7 @@
         "type": "float",
         "description": "最大扣除比例",
         "default": 0.10,
-        "hint": "最大扣除比例，默认10%。差距达到最大值时的扣除比例。"
-      },
-      "max_gap_for_calculation": {
-        "type": "float",
-        "description": "最大差距参考值",
-        "default": 10000.0,
-        "hint": "用于计算扣除比例的最大差距参考值。差距达到此值时按最大比例扣除。"
+        "hint": "最大扣除比例，默认10%。相对差距达到100%时按此比例扣除。"
       },
       "check_interval_minutes": {
         "type": "int",
