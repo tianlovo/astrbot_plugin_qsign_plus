@@ -324,6 +324,7 @@ class WealthGapPenaltyService:
 
         try:
             from astrbot.api.message_components import At, Plain
+            from astrbot.core.platform.message_type import MessageType
 
             if is_applying:
                 message_text = (
@@ -342,8 +343,12 @@ class WealthGapPenaltyService:
             # 构建消息链
             chain = [At(qq=user_id), Plain(message_text)]
 
+            # 构建 session 字符串: platform:message_type:session_id
+            # 使用 aiocqhttp 平台和 GroupMessage 类型
+            session_str = f"aiocqhttp:{MessageType.GROUP_MESSAGE.value}:{group_id}"
+
             # 发送消息
-            await self._context.send_message(group_id, chain)
+            await self._context.send_message(session_str, chain)
 
         except Exception as e:
             logger.error(f"[财富差距惩罚] 发送通知失败: {e}")
