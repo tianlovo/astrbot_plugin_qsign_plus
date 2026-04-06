@@ -49,7 +49,8 @@ class WealthGapPenaltyService:
         self._config = config
         self._context = context
 
-        self._task: asyncio.Task | None = None
+        self._check_task: asyncio.Task | None = None
+        self._penalty_task: asyncio.Task | None = None
         self._stop_event = asyncio.Event()
         # 存储群组的 unified_msg_origin，格式: {group_id: umo}
         self._group_umo_cache: dict[str, str] = {}
@@ -76,32 +77,46 @@ class WealthGapPenaltyService:
 
     async def start(self) -> None:
         """启动财富榜差距惩罚服务"""
-        if self._task and not self._task.done():
+        if self._check_task and not self._check_task.done():
             logger.warning("[财富差距惩罚] 服务已在运行中")
             return
 
         self._stop_event.clear()
-        self._task = asyncio.create_task(self._run_service())
+        # 启动两个独立的任务：检测任务和扣除任务
+        self._check_task = asyncio.create_task(self._run_check_loop())
+        self._penalty_task = asyncio.create_task(self._run_penalty_loop())
         logger.info("[财富差距惩罚] 后台服务已启动")
 
     async def stop(self) -> None:
         """停止财富榜差距惩罚服务"""
-        if not self._task or self._task.done():
+        if not self._check_task or self._check_task.done():
             logger.info("[财富差距惩罚] 服务已停止或未启动")
             return
 
         self._stop_event.set()
-        self._task.cancel()
+        
+        # 取消两个任务
+        if self._check_task:
+            self._check_task.cancel()
+        if self._penalty_task:
+            self._penalty_task.cancel()
 
         try:
-            await self._task
+            if self._check_task:
+                await self._check_task
+        except asyncio.CancelledError:
+            pass
+
+        try:
+            if self._penalty_task:
+                await self._penalty_task
         except asyncio.CancelledError:
             pass
 
         logger.info("[财富差距惩罚] 后台服务已停止")
 
-    async def _run_service(self) -> None:
-        """运行服务主循环"""
+    async def _run_check_loop(self) -> None:
+        """运行检测循环（检测间隔）"""
         penalty_config = self._config.get("wealth_gap_penalty", {})
         check_interval = penalty_config.get("check_interval_minutes", 1) * 60  # 转换为秒
 
@@ -118,8 +133,26 @@ class WealthGapPenaltyService:
             except asyncio.TimeoutError:
                 pass
 
+    async def _run_penalty_loop(self) -> None:
+        """运行扣除循环（扣除间隔）"""
+        penalty_config = self._config.get("wealth_gap_penalty", {})
+        penalty_interval = penalty_config.get("penalty_interval_minutes", 60) * 60  # 转换为秒
+
+        while not self._stop_event.is_set():
+            try:
+                await self._apply_penalty_to_all_groups()
+            except Exception as e:
+                logger.error(f"[财富差距惩罚] 扣除过程出错: {e}")
+
+            try:
+                await asyncio.wait_for(
+                    self._stop_event.wait(), timeout=penalty_interval
+                )
+            except asyncio.TimeoutError:
+                pass
+
     async def _check_all_groups(self) -> None:
-        """检查所有启用群的财富榜差距"""
+        """检查所有启用群的财富榜差距（检测间隔）"""
         penalty_config = self._config.get("wealth_gap_penalty", {})
         if not penalty_config.get("enabled", True):
             return
@@ -132,6 +165,21 @@ class WealthGapPenaltyService:
                 await self._check_group_wealth_gap(group_id)
             except Exception as e:
                 logger.error(f"[财富差距惩罚] 检查群 {group_id} 时出错: {e}")
+
+    async def _apply_penalty_to_all_groups(self) -> None:
+        """对所有有debuff的用户执行扣除（扣除间隔）"""
+        penalty_config = self._config.get("wealth_gap_penalty", {})
+        if not penalty_config.get("enabled", True):
+            return
+
+        basic_config = self._config.get("basic", {})
+        enabled_groups = basic_config.get("enabled_groups", [])
+
+        for group_id in enabled_groups:
+            try:
+                await self._apply_penalty_to_group(group_id)
+            except Exception as e:
+                logger.error(f"[财富差距惩罚] 扣除群 {group_id} 时出错: {e}")
 
     async def _check_group_wealth_gap(self, group_id: str) -> None:
         """检查指定群的财富榜差距
@@ -179,19 +227,60 @@ class WealthGapPenaltyService:
         )
 
         if gap > gap_threshold:
-            # 差距超过阈值，赋予或更新debuff
+            # 差距超过阈值，赋予debuff（如果还没有）
             if not penalty_status["has_debuff"]:
-                # 新赋予debuff
                 await self._apply_debuff(group_id, first_user_id, gap)
-            else:
-                # 更新debuff（检查是否需要扣除）
-                await self._apply_penalty_if_needed(
-                    group_id, first_user_id, first_wealth, gap
-                )
         else:
             # 差距在阈值内，去除debuff
             if penalty_status["has_debuff"]:
                 await self._remove_debuff(group_id, first_user_id)
+
+    async def _apply_penalty_to_group(self, group_id: str) -> None:
+        """对指定群的有debuff用户执行扣除
+
+        Args:
+            group_id: 群ID
+        """
+        # 获取群内所有用户
+        group_users = await self._data_manager.get_group_users(group_id)
+        if len(group_users) < 2:
+            return
+
+        # 计算每个用户的身价
+        user_wealth_list = []
+        for user_id in group_users:
+            try:
+                user_data = await self._data_manager.get_user_data(group_id, user_id)
+                total_wealth = await self._wealth_calculator.calculate_wealth_value(
+                    group_id, user_data, user_id
+                )
+                user_wealth_list.append((user_id, total_wealth))
+            except Exception as e:
+                logger.error(f"[财富差距惩罚] 计算用户 {user_id} 身价失败: {e}")
+
+        if len(user_wealth_list) < 2:
+            return
+
+        # 按身价排序
+        user_wealth_list.sort(key=lambda x: x[1], reverse=True)
+
+        # 获取第一名
+        first_user_id, first_wealth = user_wealth_list[0]
+        second_user_id, second_wealth = user_wealth_list[1]
+
+        # 计算差距
+        gap = first_wealth - second_wealth
+
+        # 获取当前debuff状态
+        penalty_status = await self._data_manager.get_wealth_gap_penalty(
+            group_id, first_user_id
+        )
+
+        # 只有有debuff的用户才执行扣除
+        if penalty_status["has_debuff"]:
+            await self._apply_penalty_deduction(
+                group_id, first_user_id, first_wealth, gap
+            )
 
     async def _apply_debuff(self, group_id: str, user_id: str, gap: float) -> None:
         """赋予厄运debuff
@@ -244,10 +333,10 @@ class WealthGapPenaltyService:
 
         logger.info(f"[财富差距惩罚] 群 {group_id} 用户 {user_id} 厄运debuff已解除")
 
-    async def _apply_penalty_if_needed(
+    async def _apply_penalty_deduction(
         self, group_id: str, user_id: str, current_wealth: float, gap: float
     ) -> None:
-        """检查是否需要扣除财富
+        """执行扣除财富操作
 
         Args:
             group_id: 群ID
@@ -256,7 +345,6 @@ class WealthGapPenaltyService:
             gap: 当前差距
         """
         penalty_config = self._config.get("wealth_gap_penalty", {})
-        penalty_interval = penalty_config.get("penalty_interval_minutes", 60) * 60  # 转换为秒
 
         # 获取当前debuff状态
         penalty_status = await self._data_manager.get_wealth_gap_penalty(
@@ -264,11 +352,6 @@ class WealthGapPenaltyService:
         )
 
         now = int(time.time())
-        last_penalty_time = penalty_status.get("last_penalty_time", 0)
-
-        # 检查是否到了扣除时间
-        if now - last_penalty_time < penalty_interval:
-            return
 
         # 更新扣除比例（根据当前差距动态调整）
         min_rate = penalty_config.get("min_penalty_rate", 0.01)
@@ -288,10 +371,8 @@ class WealthGapPenaltyService:
         user_data["coins"] = new_coins
         await self._data_manager.save_user_data(group_id, user_id, user_data)
 
-        # 更新上次惩罚时间
+        # 更新上次惩罚时间和当前扣除比例
         await self._data_manager.update_penalty_last_time(group_id, user_id, now)
-
-        # 更新当前扣除比例
         await self._data_manager.set_wealth_gap_penalty(
             group_id, user_id, True, penalty_rate, penalty_status.get("debuff_start_time", now)
         )
