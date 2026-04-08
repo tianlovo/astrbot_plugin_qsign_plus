@@ -46,6 +46,12 @@
         "description": "启用自动签到",
         "default": false,
         "hint": "启用后，用户每天0点后首次发言将自动触发签到，同时禁用手动签到指令"
+      },
+      "silent_mode": {
+        "type": "bool",
+        "description": "静默模式",
+        "default": false,
+        "hint": "开启后，自动签到不发送任何消息。但用户主动使用签到命令时仍会提示已开启自动签到。"
       }
     }
   },

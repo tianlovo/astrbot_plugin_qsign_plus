@@ -143,6 +143,7 @@ class AutoCheckinService:
         group_id: str,
         event,
         sign_in_handler,
+        silent_mode: bool = False,
     ) -> dict:
         """执行自动签到
 
@@ -151,17 +152,20 @@ class AutoCheckinService:
             group_id: 群ID
             event: 消息事件
             sign_in_handler: 签到处理函数
+            silent_mode: 是否为静默模式，开启后不发送任何消息
 
         Returns:
             包含以下字段的字典:
             - should_reply: 是否需要回复
             - already_signed: 是否已经签到过
             - success: 是否成功触发签到（仅当 already_signed=False 时有效）
+            - silent_mode: 是否为静默模式
         """
         result = {
             "should_reply": False,
             "already_signed": False,
             "success": False,
+            "silent_mode": silent_mode,
         }
 
         # 1. 先检查内存缓存，如果已有记录则跳过（今日已处理过该用户）
@@ -175,8 +179,8 @@ class AutoCheckinService:
         # 3. 标记到内存缓存（无论是否已签到，都标记为已处理，今日不再检查）
         self.mark_auto_checked_in(user_id, group_id)
 
-        # 4. 设置需要回复
-        result["should_reply"] = True
+        # 4. 设置需要回复（仅在非静默模式下）
+        result["should_reply"] = not silent_mode
 
         # 5. 如果已签到，返回已签到状态
         if has_signed:
@@ -185,7 +189,7 @@ class AutoCheckinService:
 
         # 6. 未签到，触发自动签到
         try:
-            await sign_in_handler(event, is_auto=True)
+            await sign_in_handler(event, is_auto=True, silent_mode=silent_mode)
             result["success"] = True
         except Exception as e:
             logger.error(f"[自动签到] 执行自动签到失败: {e}")

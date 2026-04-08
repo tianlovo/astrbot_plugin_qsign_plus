@@ -1270,12 +1270,13 @@ class ContractSystem(Star):
         )
 
     @filter.regex(r"^签到$")
-    async def sign_in(self, event: AstrMessageEvent, is_auto: bool = False):
+    async def sign_in(self, event: AstrMessageEvent, is_auto: bool = False, silent_mode: bool = False):
         """签到处理
 
         Args:
             event: 消息事件
             is_auto: 是否为自动签到触发
+            silent_mode: 是否为静默模式，开启后不发送任何消息
         """
         if not is_at_bot(event) and not is_auto:
             return
@@ -1296,7 +1297,8 @@ class ContractSystem(Star):
 
         # 检查维护模式
         if self._is_maintenance_mode():
-            await send_text_reply(event, "系统维护中，暂时无法使用此功能，请稍后再试。")
+            if not silent_mode:
+                await send_text_reply(event, "系统维护中，暂时无法使用此功能，请稍后再试。")
             return
 
         user_id = str(event.get_sender_id())
@@ -1309,7 +1311,8 @@ class ContractSystem(Star):
             last_sign_dt = datetime.fromisoformat(user_data["last_sign"])
             last_sign_aware = SHANGHAI_TZ.localize(last_sign_dt)
             if last_sign_aware.date() == today:
-                await send_text_reply(event, "你今天已经签到过了，明天再来吧。")
+                if not silent_mode:
+                    await send_text_reply(event, "你今天已经签到过了，明天再来吧。")
                 return
             if (today - last_sign_aware.date()).days == 1:
                 user_data["consecutive"] += 1
@@ -1384,6 +1387,10 @@ class ContractSystem(Star):
 
             sign_text += f"👥 雇员数量: {len(user_data['contractors'])} 人"
             
+            # 静默模式下不发送任何消息
+            if silent_mode:
+                return
+            
             # 自动签到时引用原消息
             if is_auto:
                 from astrbot.api.message_components import Reply, Plain
@@ -1402,6 +1409,10 @@ class ContractSystem(Star):
             original_earned=original_earned,
             bg_api_url=bg_api_url,
         )
+
+        # 静默模式下不发送任何消息
+        if silent_mode:
+            return
 
         try:
             html_url = await self.html_render(
@@ -1979,12 +1990,15 @@ class ContractSystem(Star):
 
         user_id = str(event.get_sender_id())
 
+        # 获取静默模式配置
+        silent_mode = auto_checkin_config.get("silent_mode", False)
+
         # 尝试触发自动签到
         result = await self.auto_checkin_service.perform_auto_checkin(
-            user_id, group_id, event, self.sign_in
+            user_id, group_id, event, self.sign_in, silent_mode=silent_mode
         )
 
-        # 如果需要回复（首次处理该用户）
+        # 如果需要回复（首次处理该用户且非静默模式）
         if result.get("should_reply", False):
             # 已签到，静默处理（不再发送提示）
             if result.get("already_signed", False):
