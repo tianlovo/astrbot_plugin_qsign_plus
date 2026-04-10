@@ -1,6 +1,7 @@
 import asyncio
 import os
 import random
+import time
 from datetime import datetime
 
 import pytz
@@ -66,6 +67,10 @@ class ContractSystem(Star):
         # Admin cache: {group_id: {"admin_ids": list[str], "expire_time": timestamp}}
         self._admin_cache: dict[str, dict] = {}
         self._admin_cache_ttl = 300  # 缓存有效期5分钟
+
+        # Cleanup contractors cooldown cache: {group_id: {user_id: last_cleanup_time}}
+        self._cleanup_cooldown: dict[str, dict[str, float]] = {}
+        self._cleanup_cooldown_seconds = 300  # 冷却时间5分钟
 
         # Load data to cache
         asyncio.create_task(self.data_manager.init())
@@ -1576,6 +1581,17 @@ class ContractSystem(Star):
             return
 
         user_id = str(event.get_sender_id())
+
+        # 检查冷却时间
+        now = time.time()
+        if group_id in self._cleanup_cooldown:
+            last_cleanup = self._cleanup_cooldown[group_id].get(user_id, 0)
+            elapsed = now - last_cleanup
+            if elapsed < self._cleanup_cooldown_seconds:
+                remaining = int(self._cleanup_cooldown_seconds - elapsed)
+                await send_text_reply(event, f"清理雇员命令冷却中，请 {remaining} 秒后再试。")
+                return
+
         user_data = await self.data_manager.get_user_data(group_id, user_id)
 
         # 检查是否有雇员
@@ -1608,6 +1624,11 @@ class ContractSystem(Star):
         # 赔偿雇主
         user_data["coins"] += total_compensation
         await self.data_manager.save_user_data(group_id, user_id, user_data)
+
+        # 更新冷却时间
+        if group_id not in self._cleanup_cooldown:
+            self._cleanup_cooldown[group_id] = {}
+        self._cleanup_cooldown[group_id][user_id] = time.time()
 
         # 发送清理结果
         contractor_names = []
