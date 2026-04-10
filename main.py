@@ -1587,16 +1587,12 @@ class ContractSystem(Star):
         trade_config = self.config.get("trade", {})
         compensation_price = trade_config.get("cleanup_compensation_price", 100)
 
-        # 获取平台适配器
-        platform_id = event.platform_meta.get("platform_id", "")
-        platform = self.context.get_platform_inst(platform_id)
-
         left_contractors = []
         total_compensation = 0
 
         # 检查每个雇员是否仍在群中
         for contractor_id in user_data["contractors"]:
-            is_in_group = await self._check_user_in_group(platform, group_id, contractor_id)
+            is_in_group = await self._check_user_in_group(event, group_id, contractor_id)
             if not is_in_group:
                 left_contractors.append(contractor_id)
                 total_compensation += compensation_price
@@ -1626,11 +1622,11 @@ class ContractSystem(Star):
             f"获得赔偿：{total_compensation:.1f} {currency}（每名雇员 {compensation_price:.1f} {currency}）",
         )
 
-    async def _check_user_in_group(self, platform, group_id: str, user_id: str) -> bool:
+    async def _check_user_in_group(self, event: AstrMessageEvent, group_id: str, user_id: str) -> bool:
         """检查用户是否仍在群中
 
         Args:
-            platform: 平台适配器
+            event: 消息事件
             group_id: 群ID
             user_id: 用户ID
 
@@ -1638,13 +1634,13 @@ class ContractSystem(Star):
             用户是否在群中
         """
         try:
-            if platform and hasattr(platform, 'bot'):
-                from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_platform_adapter import (
-                    AiocqhttpPlatformAdapter,
+            if event.get_platform_name() == "aiocqhttp":
+                from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
+                    AiocqhttpMessageEvent,
                 )
 
-                if isinstance(platform, AiocqhttpPlatformAdapter):
-                    client = platform.bot
+                if isinstance(event, AiocqhttpMessageEvent):
+                    client = event.bot
                     try:
                         await client.get_group_member_info(
                             group_id=int(group_id),
