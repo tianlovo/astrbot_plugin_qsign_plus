@@ -83,6 +83,12 @@
         "description": "最低购买价格",
         "default": 100,
         "hint": "购买时的最低价格，如果目标身价低于此值，则按此值计算。管理员加成在此基础上计算。"
+      },
+      "cleanup_compensation_price": {
+        "type": "float",
+        "description": "清理退群雇员赔偿价格",
+        "default": 100,
+        "hint": "使用清理雇员命令时，每个退群雇员赔偿雇主的金额。默认与最低购买价格相同。"
       }
     }
   },

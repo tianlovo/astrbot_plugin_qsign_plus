@@ -1559,6 +1559,108 @@ class ContractSystem(Star):
             f"原雇主 {employer_name} 获得了 {compensation:.1f} {currency}作为补偿（赎身费用的{redeem_return_rate * 100:.0f}%）。",
         )
 
+    @filter.regex(r"^清理雇员$")
+    async def cleanup_contractors(self, event: AstrMessageEvent):
+        """清理已退群的雇员"""
+        if not is_at_bot(event):
+            return
+
+        group_id = str(event.message_obj.group_id)
+        basic_config = self.config.get("basic", {})
+        if not is_group_allowed(group_id, basic_config.get("enabled_groups", [])):
+            return
+
+        # 检查维护模式
+        if self._is_maintenance_mode():
+            await send_text_reply(event, "系统维护中，暂时无法使用此功能，请稍后再试。")
+            return
+
+        user_id = str(event.get_sender_id())
+        user_data = await self.data_manager.get_user_data(group_id, user_id)
+
+        # 检查是否有雇员
+        if not user_data["contractors"]:
+            await send_text_reply(event, "您当前没有雇员，无需清理。")
+            return
+
+        currency = self._get_currency_name()
+        trade_config = self.config.get("trade", {})
+        compensation_price = trade_config.get("cleanup_compensation_price", 100)
+
+        # 获取平台适配器
+        platform_id = event.platform_meta.get("platform_id", "")
+        platform = self.context.get_platform_inst(platform_id)
+
+        left_contractors = []
+        total_compensation = 0
+
+        # 检查每个雇员是否仍在群中
+        for contractor_id in user_data["contractors"]:
+            is_in_group = await self._check_user_in_group(platform, group_id, contractor_id)
+            if not is_in_group:
+                left_contractors.append(contractor_id)
+                total_compensation += compensation_price
+
+        if not left_contractors:
+            await send_text_reply(event, "您的所有雇员都在群中，没有需要清理的退群雇员。")
+            return
+
+        # 移除退群雇员并赔偿雇主
+        for contractor_id in left_contractors:
+            await self.data_manager.remove_contractor(group_id, user_id, contractor_id)
+
+        # 赔偿雇主
+        user_data["coins"] += total_compensation
+        await self.data_manager.save_user_data(group_id, user_id, user_data)
+
+        # 发送清理结果
+        contractor_names = []
+        for cid in left_contractors:
+            name = await self._get_user_name_from_platform(event, cid)
+            contractor_names.append(name)
+
+        await send_text_reply(
+            event,
+            f"清理完成！共清理 {len(left_contractors)} 名退群雇员：\n"
+            f"{', '.join(contractor_names)}\n"
+            f"获得赔偿：{total_compensation:.1f} {currency}（每名雇员 {compensation_price:.1f} {currency}）",
+        )
+
+    async def _check_user_in_group(self, platform, group_id: str, user_id: str) -> bool:
+        """检查用户是否仍在群中
+
+        Args:
+            platform: 平台适配器
+            group_id: 群ID
+            user_id: 用户ID
+
+        Returns:
+            用户是否在群中
+        """
+        try:
+            if platform and hasattr(platform, 'bot'):
+                from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_platform_adapter import (
+                    AiocqhttpPlatformAdapter,
+                )
+
+                if isinstance(platform, AiocqhttpPlatformAdapter):
+                    client = platform.bot
+                    try:
+                        await client.get_group_member_info(
+                            group_id=int(group_id),
+                            user_id=int(user_id),
+                            no_cache=True,
+                        )
+                        return True
+                    except Exception:
+                        # 获取成员信息失败，说明用户不在群中
+                        return False
+        except Exception as e:
+            logger.debug(f"[清理雇员] 检查用户 {user_id} 是否在群 {group_id} 中失败: {e}")
+
+        # 默认假设用户在群中（避免误清理）
+        return True
+
     async def _get_group_owner_id(self, event: AstrMessageEvent) -> str | None:
         """获取群群主ID
 
