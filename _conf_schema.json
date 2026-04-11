@@ -89,6 +89,12 @@
         "description": "清理退群雇员赔偿价格",
         "default": 100,
         "hint": "使用清理雇员命令时，每个退群雇员赔偿雇主的金额。默认与最低购买价格相同。"
+      },
+      "prevent_purchase_employed": {
+        "type": "bool",
+        "description": "禁止购买已有雇主的群友",
+        "default": false,
+        "hint": "开启后，禁止购买已经有雇主的群友，保护雇员归属关系。关闭时允许恶意收购（需支付额外费用）。"
       }
     }
   },

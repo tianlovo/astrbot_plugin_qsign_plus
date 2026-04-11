@@ -383,7 +383,17 @@ class ContractSystem(Star):
                 await send_text_reply(event, "该用户已经是您的雇员了。")
                 return
 
+            # 检查是否禁止购买已有雇主的群友
             trade_config = self.config.get("trade", {})
+            if trade_config.get("prevent_purchase_employed", False):
+                original_owner_name = await self._get_user_name_from_platform(
+                    event, original_owner_id
+                )
+                await send_text_reply(
+                    event, f"该用户已有雇主（{original_owner_name}），无法购买。"
+                )
+                return
+
             takeover_rate = trade_config.get("takeover_fee_rate", 0.1)
             extra_cost = base_cost * takeover_rate
             total_cost += extra_cost
