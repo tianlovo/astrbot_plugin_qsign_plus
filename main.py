@@ -375,6 +375,21 @@ class ContractSystem(Star):
             group_id, target_data, target_id, target_role
         )
 
+        # 检查购买身价阈值
+        trade_config = self.config.get("trade", {})
+        purchase_wealth_threshold = trade_config.get("purchase_wealth_threshold", 0)
+        if purchase_wealth_threshold > 0:
+            target_wealth = await self.wealth_calculator.calculate_wealth_value(
+                group_id, target_data, target_id
+            )
+            if target_wealth < purchase_wealth_threshold:
+                currency = self._get_currency_name()
+                await send_text_reply(
+                    event,
+                    f"该用户身价过低（{target_wealth:.1f} {currency}），无法购买。最低要求：{purchase_wealth_threshold:.1f} {currency}",
+                )
+                return
+
         total_cost = base_cost
         original_owner_id = target_data.get("contracted_by")
 

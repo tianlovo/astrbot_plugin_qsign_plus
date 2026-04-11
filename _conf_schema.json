@@ -95,6 +95,12 @@
         "description": "禁止购买已有雇主的群友",
         "default": false,
         "hint": "开启后，禁止购买已经有雇主的群友，保护雇员归属关系。关闭时允许恶意收购（需支付额外费用）。"
+      },
+      "purchase_wealth_threshold": {
+        "type": "float",
+        "description": "购买身价阈值",
+        "default": 0,
+        "hint": "被购买的群友身价低于此值时不可被购买，0 表示不限制。用于保护低身价用户。"
       }
     }
   },
